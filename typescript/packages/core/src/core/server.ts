@@ -1042,8 +1042,8 @@ export class NitroStackServer {
     const nodeEnv = process.env.NODE_ENV?.toLowerCase();
     const isDevelopment = nodeEnv === 'development' || nodeEnv === 'dev' || !nodeEnv;
 
-    // Use explicit transport if set, otherwise infer from NODE_ENV
-    const transportType = explicitTransport || (isDevelopment ? 'stdio' : 'dual');
+    // Use explicit transport if set, respect decorator setting, otherwise infer from NODE_ENV
+    const transportType = explicitTransport || this._transportType || (isDevelopment ? 'stdio' : 'dual');
     this._transportType = transportType;
     this.logger.debug(`NitroStackServer.start(): NODE_ENV=${process.env.NODE_ENV}, MCP_TRANSPORT_TYPE=${explicitTransport}, transportType=${transportType}`);
 
