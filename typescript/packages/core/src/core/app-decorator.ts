@@ -269,6 +269,11 @@ export class McpApplicationFactory {
     // Register the server itself in DI so dynamic modules can inject it
     // Use string token since NitroStackServer has specific constructor signature
     container.registerValue('NitroStackServer', server);
+    // ALSO register under the class constructor token so design:paramtypes resolution works.
+    // OAuthModule injects NitroStackServer via design:paramtypes (no @Inject decorator),
+    // so the DI container looks it up by class reference, not the string token.
+    container.registerValue(NitroStackServer, server);
+
 
     // Now register and add dynamic modules (from forRoot() calls) to server
     for (const dynamicModule of dynamicModulesToAdd) {

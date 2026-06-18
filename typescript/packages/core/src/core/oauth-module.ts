@@ -71,6 +71,12 @@ export interface OAuthModuleConfig {
   issuer?: string;
 
   /**
+   * JWKS URI for cryptographic signature verification
+   * Required for offline verification of JWT access tokens
+   */
+  jwksUri?: string;
+
+  /**
    * Custom token validation
    * Additional validation logic beyond spec requirements
    */
@@ -320,9 +326,19 @@ export class OAuthModule {
       throw new Error('OAuthModule: at least one authorizationServer is required');
     }
 
-    // Set default audience to resourceUri if not provided
+    // Set default jwksUri from environment if not explicitly provided
+    if (!config.jwksUri && process.env.JWKS_URI) {
+      config.jwksUri = process.env.JWKS_URI;
+    }
+
+    // Set default audience from environment or fallback to resourceUri
     if (!config.audience) {
-      config.audience = config.resourceUri;
+      config.audience = process.env.TOKEN_AUDIENCE || config.resourceUri;
+    }
+
+    // Set default issuer from environment if not explicitly provided
+    if (!config.issuer && process.env.TOKEN_ISSUER) {
+      config.issuer = process.env.TOKEN_ISSUER;
     }
 
     this.config = config;
@@ -380,6 +396,31 @@ export class OAuthModule {
       // If introspection endpoint is configured, use it
       if (this.config.tokenIntrospectionEndpoint) {
         return await this.introspectToken(token);
+      }
+
+      // If JWKS URI is configured, validate signature cryptographically
+      if (this.config.jwksUri) {
+        try {
+          const { jwtVerify, createRemoteJWKSet } = await import('jose');
+          const jwks = createRemoteJWKSet(new URL(this.config.jwksUri));
+          const { payload } = await jwtVerify(token, jwks, {
+            issuer: this.config.issuer,
+            audience: this.config.audience || this.config.resourceUri,
+            clockTolerance: 30,
+          });
+
+          // Custom validation
+          if (this.config.customValidation) {
+            const customValid = await this.config.customValidation(payload);
+            if (!customValid) {
+              return { valid: false, error: 'Custom validation failed' };
+            }
+          }
+
+          return { valid: true, payload: payload as Record<string, unknown> };
+        } catch (jwksError: any) {
+          return { valid: false, error: `JWT signature verification failed: ${jwksError.message}` };
+        }
       }
 
       // For JWT tokens without introspection, decode and validate
@@ -521,5 +562,3 @@ export class OAuthModule {
     }
   }
 }
-
-
