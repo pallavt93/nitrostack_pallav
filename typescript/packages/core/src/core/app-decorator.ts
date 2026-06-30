@@ -394,7 +394,9 @@ export class McpApplicationFactory {
     }
 
     // Auto-detect transport type based on configuration
-    let transportType: 'stdio' | 'http' | 'dual' = 'stdio';
+    // Default is undefined — when no explicit transport or OAuth is configured, we leave
+    // _transportType unset so server.ts can apply its own default (dual mode).
+    let transportType: 'stdio' | 'http' | 'dual' | undefined = undefined;
     let transportOptions: TransportOptions | undefined = undefined;
     
     // Check explicit transport configuration
@@ -449,11 +451,15 @@ export class McpApplicationFactory {
     }
     
     // Store transport configuration on server for later use
+    // Only write _transportType when it was explicitly/derivatively set (OAuth or user config).
+    // If undefined, server.ts will fall back to its own default (dual mode).
     const serverInternal = server as unknown as { 
-      _transportType: 'stdio' | 'http' | 'dual';
+      _transportType: 'stdio' | 'http' | 'dual' | undefined;
       _transportOptions: TransportOptions | undefined;
     };
-    serverInternal._transportType = transportType;
+    if (transportType !== undefined) {
+      serverInternal._transportType = transportType;
+    }
     serverInternal._transportOptions = transportOptions;
 
     return server;
