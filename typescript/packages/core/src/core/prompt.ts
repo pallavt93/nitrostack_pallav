@@ -59,8 +59,7 @@ export class Prompt {
     context.logger.info(`Executing prompt: ${this.name}`, { args: args as unknown as JsonObject });
 
     try {
-      const messagesResult = await this.definition.handler(args, context);
-      const messages = Array.isArray(messagesResult) ? messagesResult : [messagesResult];
+      const messages = await this.definition.handler(args, context);
       
       context.logger.info(`Prompt executed successfully: ${this.name}`, {
         messageCount: messages.length,
