@@ -269,11 +269,6 @@ export class McpApplicationFactory {
     // Register the server itself in DI so dynamic modules can inject it
     // Use string token since NitroStackServer has specific constructor signature
     container.registerValue('NitroStackServer', server);
-    // ALSO register under the class constructor token so design:paramtypes resolution works.
-    // OAuthModule injects NitroStackServer via design:paramtypes (no @Inject decorator),
-    // so the DI container looks it up by class reference, not the string token.
-    container.registerValue(NitroStackServer, server);
-
 
     // Now register and add dynamic modules (from forRoot() calls) to server
     for (const dynamicModule of dynamicModulesToAdd) {
@@ -394,9 +389,7 @@ export class McpApplicationFactory {
     }
 
     // Auto-detect transport type based on configuration
-    // Default is undefined — when no explicit transport or OAuth is configured, we leave
-    // _transportType unset so server.ts can apply its own default (dual mode).
-    let transportType: 'stdio' | 'http' | 'dual' | undefined = undefined;
+    let transportType: 'stdio' | 'http' | 'dual' = 'stdio';
     let transportOptions: TransportOptions | undefined = undefined;
     
     // Check explicit transport configuration
@@ -451,15 +444,11 @@ export class McpApplicationFactory {
     }
     
     // Store transport configuration on server for later use
-    // Only write _transportType when it was explicitly/derivatively set (OAuth or user config).
-    // If undefined, server.ts will fall back to its own default (dual mode).
     const serverInternal = server as unknown as { 
-      _transportType: 'stdio' | 'http' | 'dual' | undefined;
+      _transportType: 'stdio' | 'http' | 'dual';
       _transportOptions: TransportOptions | undefined;
     };
-    if (transportType !== undefined) {
-      serverInternal._transportType = transportType;
-    }
+    serverInternal._transportType = transportType;
     serverInternal._transportOptions = transportOptions;
 
     return server;
