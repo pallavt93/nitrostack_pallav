@@ -1166,19 +1166,44 @@ export class NitroStackServer {
         transport.onmessage = async (message: JsonRpcRequest) => {
           // Handle the message through the MCP server's internal handler
           try {
-            // Access internal handlers - this is necessary for dual mode
-            const mcpServerInternal = this.mcpServer as unknown as { _requestHandlers?: Map<string, (req: JsonRpcRequest) => Promise<unknown>> };
-            const handlers = mcpServerInternal._requestHandlers;
-            if (handlers && message && message.method && message.id !== undefined) {
-              const handler = handlers.get(message.method);
-              if (handler) {
-                const result = await handler(message);
-                // Send response back through HTTP transport
-                await transport.send({
-                  jsonrpc: '2.0',
-                  id: message.id,
-                  result,
-                });
+            const mcpServerInternal = this.mcpServer as any;
+            const customHandlers = mcpServerInternal._requestHandlers;
+            const sdkHandlers = mcpServerInternal.server?._requestHandlers;
+
+            if (message && message.method) {
+              const isRequest = message.id !== undefined && message.id !== null;
+
+              if (isRequest) {
+                const handler = sdkHandlers?.get(message.method) || customHandlers?.get(message.method);
+                if (handler) {
+                  const extra = {
+                    signal: new AbortController().signal,
+                    requestId: message.id!,
+                    sendNotification: async (notification: any) => {
+                      await transport.send(notification);
+                    },
+                    sendRequest: async () => {
+                      throw new Error('sendRequest not supported in dual transport mode');
+                    }
+                  };
+
+                  const result = await handler(message, extra);
+                  // Send response back through HTTP transport
+                  await transport.send({
+                    jsonrpc: '2.0',
+                    id: message.id!,
+                    result,
+                  });
+                } else {
+                  this.logger.warn(`[Dual Mode] No request handler found for method: ${message.method}`);
+                }
+              } else {
+                const notificationHandler = mcpServerInternal.server?._notificationHandlers?.get(message.method) || customHandlers?.get(message.method);
+                if (notificationHandler) {
+                  await notificationHandler(message);
+                } else {
+                  this.logger.warn(`[Dual Mode] No notification handler found for method: ${message.method}`);
+                }
               }
             }
           } catch (error: unknown) {

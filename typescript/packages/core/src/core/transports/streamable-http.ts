@@ -99,6 +99,7 @@ export class StreamableHttpTransport implements Transport {
   private serverConfig?: { name: string; version: string; description?: string };
   private logoBase64?: string;
   private _routesRegistered = false;
+  private pendingResponses: Map<string | number, Response> = new Map();
 
   constructor(options: StreamableHttpTransportOptions = {}) {
     this.options = {
@@ -398,9 +399,16 @@ export class StreamableHttpTransport implements Transport {
       }
 
       if (messageType === 'request') {
-        // Request: Accept header check (be lenient - if not specified, assume they want SSE)
-        const supportsSSE = !accept || accept.includes('text/event-stream') || accept.includes('*/*');
-        const supportsJSON = accept.includes('application/json');
+        const reqMessage = message as JSONRPCRequest;
+        const requestId = reqMessage.id;
+
+        // Store response object to respond directly
+        if (requestId !== undefined && requestId !== null) {
+          this.pendingResponses.set(requestId, res);
+          res.on('close', () => {
+            this.pendingResponses.delete(requestId);
+          });
+        }
 
         // Pass to message handler
         if (this.messageHandler) {
@@ -423,17 +431,10 @@ export class StreamableHttpTransport implements Transport {
           }
         }
 
-        // For SSE: Just acknowledge receipt, response will come via existing SSE stream
-        if (supportsSSE) {
-          // Accept the request
-          res.status(202).send();
-          // Response will be sent via the send() method to existing SSE streams
-        } else {
-          // Single JSON response (less common)
+        // If it does not have a request ID, we just acknowledge with 202
+        if (requestId === undefined || requestId === null) {
           res.setHeader('Content-Type', 'application/json');
-          // Response will be sent by the protocol layer
-          (res as any)._mcpWaitingForResponse = true;
-          (res as any)._mcpRequestId = (message as JSONRPCRequest).id;
+          res.status(202).send('');
         }
       }
     } catch (error: unknown) {
@@ -659,6 +660,15 @@ export class StreamableHttpTransport implements Transport {
     // For responses, send to the stream that made the request
     if (this.isResponse(message)) {
       const response = message as JSONRPCResponse;
+      if (response.id !== undefined && response.id !== null) {
+        const pendingRes = this.pendingResponses.get(response.id);
+        if (pendingRes) {
+          this.pendingResponses.delete(response.id);
+          pendingRes.setHeader('Content-Type', 'application/json');
+          pendingRes.status(200).json(response);
+          return;
+        }
+      }
       await this.sendToRequestStream(response);
       return;
     }
