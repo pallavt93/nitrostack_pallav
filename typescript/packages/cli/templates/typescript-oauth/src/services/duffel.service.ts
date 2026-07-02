@@ -12,9 +12,11 @@ export class DuffelService {
     private duffel: Duffel;
 
     constructor() {
-        const apiKey = process.env.DUFFEL_API_KEY;
+        let apiKey = process.env.DUFFEL_API_KEY;
         if (!apiKey) {
-            throw new Error('DUFFEL_API_KEY environment variable is required');
+            console.error('⚠️  Warning: DUFFEL_API_KEY environment variable is missing.');
+            console.error('   Running with a dummy key for testing/dry-run mode.\n');
+            apiKey = 'duffel_test_dummy_key';
         }
 
         this.duffel = new Duffel({
