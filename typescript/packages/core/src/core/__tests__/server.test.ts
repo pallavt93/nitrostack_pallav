@@ -36,7 +36,8 @@ jest.unstable_mockModule('../transports/streamable-http.js', () => ({
         start: jest.fn().mockResolvedValue(undefined as never),
         close: jest.fn(),
         setToolsCallback: jest.fn(),
-        setServerConfig: jest.fn()
+        setServerConfig: jest.fn(),
+        setMcpServerFactory: jest.fn(),
     }))
 }));
 

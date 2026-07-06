@@ -14,14 +14,22 @@
  * - Protocol version header support
  */
 
-import express, { Express, Request, Response, NextFunction } from 'express';
+import express, { Express, Request, Response } from 'express';
 import { Server as HttpServer } from 'http';
-import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse, JSONRPCNotification, Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import type { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
+import { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { v4 as uuidv4 } from 'uuid';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+
+/**
+ * Factory that builds a fully-configured MCP server instance.
+ * Each Streamable HTTP session gets its own server, since an SDK server can
+ * only be connected to a single transport at a time.
+ */
+export type McpServerFactory = () => McpServer;
 
 export interface StreamableHttpTransportOptions {
   /**
@@ -60,46 +68,31 @@ export interface StreamableHttpTransportOptions {
   enableCors?: boolean;
 }
 
-interface ClientSession {
-  id: string;
-  streams: Map<string, SSEStream>;
-  lastActivity: number;
-  messageQueue: QueuedMessage[];
-  eventIdCounter: number;
-}
-
-interface SSEStream {
-  id: string;
-  response: Response;
-  eventIdCounter: number;
-  closed: boolean;
-}
-
-interface QueuedMessage {
-  message: JSONRPCMessage;
-  streamId?: string;
-  eventId?: string;
+interface McpSession {
+  server: McpServer;
+  transport: StreamableHTTPServerTransport;
 }
 
 /**
- * Streamable HTTP Transport
- * Implements MCP Streamable HTTP specification
+ * Streamable HTTP host.
+ *
+ * This class owns the Express application (CORS, origin checks, OAuth discovery
+ * routes, health, documentation page, legacy-SSE lifecycle) but delegates the
+ * actual MCP protocol handling on `/mcp` to the official
+ * `@modelcontextprotocol/sdk` `StreamableHTTPServerTransport`. That transport
+ * returns the JSON-RPC result on the POST response (or an SSE stream on the same
+ * request), which is what modern MCP clients such as Cursor expect.
  */
-export class StreamableHttpTransport implements Transport {
+export class StreamableHttpTransport {
   private app: Express;
   private server: HttpServer | null = null;
-  private sessions: Map<string, ClientSession> = new Map();
-  private activeStreams: Map<string, SSEStream> = new Map(); // For sessionless mode
-  private messageHandler?: (message: JSONRPCMessage) => Promise<void>;
-  private closeHandler?: () => void;
-  private errorHandler?: (error: Error) => void;
   private options: Required<Omit<StreamableHttpTransportOptions, 'app'>>;
-  private sessionCleanupInterval?: NodeJS.Timeout;
   private getToolsCallback?: () => Promise<McpTool[]>;
   private serverConfig?: { name: string; version: string; description?: string };
   private logoBase64?: string;
   private _routesRegistered = false;
-  private pendingResponses: Map<string | number, Response> = new Map();
+  private mcpServerFactory?: McpServerFactory;
+  private mcpSessions: Map<string, McpSession> = new Map();
 
   constructor(options: StreamableHttpTransportOptions = {}) {
     this.options = {
@@ -124,7 +117,14 @@ export class StreamableHttpTransport implements Transport {
     this.loadLogo();
 
     this.setupMiddleware();
-    this.startSessionCleanup();
+  }
+
+  /**
+   * Provide the factory used to build a configured MCP server per session.
+   * Must be called before `start()`.
+   */
+  setMcpServerFactory(factory: McpServerFactory): void {
+    this.mcpServerFactory = factory;
   }
 
   /**
@@ -219,98 +219,19 @@ export class StreamableHttpTransport implements Transport {
   private setupRoutes(): void {
     const endpoint = this.options.endpoint;
 
-    // IMPORTANT: Add OPTIONS handlers FIRST to override Express's auto-OPTIONS
+    // IMPORTANT: Add OPTIONS handler FIRST to override Express's auto-OPTIONS
     if (this.options.enableCors) {
-      // Main endpoint OPTIONS
       this.app.options(endpoint, (req, res) => {
-        res.sendStatus(200);
-      });
-
-      // SSE endpoint OPTIONS
-      this.app.options(`${endpoint}/sse`, (req, res) => {
-        res.sendStatus(200);
-      });
-
-      // Message endpoint OPTIONS
-      this.app.options(`${endpoint}/message`, (req, res) => {
         res.sendStatus(200);
       });
     }
 
-    // MCP Endpoint - POST for sending messages to server (main endpoint)
-    this.app.post(endpoint, async (req, res) => {
-      await this.handlePost(req, res);
-    });
-
-    // Legacy message endpoint for backward compatibility with old HTTP transport clients
-    // Some clients may POST to /mcp/message instead of /mcp
-    this.app.post(`${endpoint}/message`, async (req, res) => {
-      await this.handlePost(req, res);
-    });
-
-    // MCP Endpoint - GET for SSE streams (main endpoint)
-    this.app.get(endpoint, (req, res) => {
-      this.handleGet(req, res);
-    });
-
-    // Legacy SSE endpoint for backward compatibility with old HTTP transport clients
-    // Some clients may connect to /mcp/sse instead of /mcp
-    this.app.get(`${endpoint}/sse`, (req, res) => {
-      this.handleGet(req, res);
-    });
-
-    // MCP Endpoint - DELETE for session termination
-    this.app.delete(endpoint, (req, res) => {
-      this.handleDelete(req, res);
-    });
-
-    // Backward compatibility: /sse endpoint (alias for GET /mcp)
-    this.app.get(`${endpoint}/sse`, (req, res) => {
-      this.handleGet(req, res);
-    });
-
-    // Backward compatibility: /message endpoint (alias for POST /mcp)
-    this.app.post(`${endpoint}/message`, async (req, res) => {
-      // Simple message handler that doesn't require all the session/SSE logic
-      try {
-        const message = req.body as JSONRPCMessage;
-
-        if (!message || !message.jsonrpc) {
-          res.status(400).json({ error: 'Invalid JSON-RPC message' });
-          return;
-        }
-
-        // Pass to message handler
-        if (this.messageHandler) {
-          await this.messageHandler(message);
-        }
-
-        res.json({ status: 'received' });
-      } catch (error: unknown) {
-        console.error('Error handling message:', error);
-        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
-      }
-    });
-
-    // Info endpoint for GET on /message
-    this.app.get(`${endpoint}/message`, (req, res) => {
-      res.json({
-        endpoint: `${endpoint}/message`,
-        method: 'POST',
-        description: 'Send JSON-RPC messages to the MCP server',
-        usage: 'POST with Content-Type: application/json',
-        example: {
-          jsonrpc: '2.0',
-          method: 'initialize',
-          params: {
-            protocolVersion: '2024-11-05',
-            capabilities: {},
-            clientInfo: { name: 'test-client', version: '1.0.0' }
-          },
-          id: 1
-        }
-      });
-    });
+    // MCP endpoint - POST (client->server messages), GET (server->client SSE
+    // stream) and DELETE (session termination) are all delegated to the official
+    // SDK Streamable HTTP transport, which owns the protocol semantics.
+    this.app.post(endpoint, (req, res) => this.handleMcpRequest(req, res));
+    this.app.get(endpoint, (req, res) => this.handleMcpRequest(req, res));
+    this.app.delete(endpoint, (req, res) => this.handleMcpRequest(req, res));
 
     // Health check
     this.app.get(`${endpoint}/health`, (req, res) => {
@@ -318,7 +239,7 @@ export class StreamableHttpTransport implements Transport {
         status: 'ok',
         transport: 'streamable-http',
         version: '2025-06-18',
-        sessions: this.sessions.size,
+        sessions: this.mcpSessions.size,
         uptime: process.uptime(),
       });
     });
@@ -356,463 +277,77 @@ export class StreamableHttpTransport implements Transport {
   }
 
   /**
-   * Handle POST requests (client sending messages to server)
+   * Delegate an `/mcp` request (POST/GET/DELETE) to the official SDK
+   * Streamable HTTP transport. A new session (and its own MCP server instance)
+   * is created on an `initialize` POST; subsequent requests are routed by the
+   * `mcp-session-id` header.
    */
-  private async handlePost(req: Request, res: Response): Promise<void> {
+  private async handleMcpRequest(req: Request, res: Response): Promise<void> {
     try {
-      const message = req.body as JSONRPCMessage;
-      const sessionId = req.get('Mcp-Session-Id');
-      const accept = req.get('Accept') || '';
+      const sessionId = req.get('mcp-session-id');
+      let session = sessionId ? this.mcpSessions.get(sessionId) : undefined;
 
-      // Validate JSON-RPC message
-      if (!message || !message.jsonrpc || message.jsonrpc !== '2.0') {
-        res.status(400).json({
-          jsonrpc: '2.0',
-          error: { code: -32600, message: 'Invalid JSON-RPC message' }
-        });
-        return;
-      }
-
-      // Check session
-      if (this.options.enableSessions && sessionId) {
-        const session = this.sessions.get(sessionId);
-        if (!session) {
-          res.status(404).json({
-            jsonrpc: '2.0',
-            error: { code: -32001, message: 'Session not found' }
-          });
-          return;
-        }
-        session.lastActivity = Date.now();
-      }
-
-      // Handle different message types
-      const messageType = this.getMessageType(message);
-
-      if (messageType === 'notification' || messageType === 'response') {
-        // Notification or Response: Return 202 Accepted
-        if (this.messageHandler) {
-          await this.messageHandler(message);
-        }
-        res.status(202).send();
-        return;
-      }
-
-      if (messageType === 'request') {
-        const reqMessage = message as JSONRPCRequest;
-        const requestId = reqMessage.id;
-
-        // Accept-based response negotiation.
-        // When an SSE stream is already open we deliver the response over it,
-        // UNLESS the client asked for JSON exclusively (lists application/json and
-        // not the */* wildcard). A wildcard or absent Accept is treated as
-        // SSE-capable. This keeps legacy SSE clients working (they open a stream
-        // and expect responses there) while still returning direct JSON to pure
-        // request/response clients and to anyone with no open stream.
-        const wantsSSE = accept.includes('text/event-stream');
-        const wantsJsonOnly = accept.includes('application/json') && !accept.includes('*/*');
-        const useSseStream = (wantsSSE || !wantsJsonOnly) && this.hasOpenStreams();
-
-        // Store response object to respond directly (JSON path only).
-        if (!useSseStream && requestId !== undefined && requestId !== null) {
-          this.pendingResponses.set(requestId, res);
-          res.on('close', () => {
-            this.pendingResponses.delete(requestId);
-          });
-        }
-
-        // Pass to message handler
-        if (this.messageHandler) {
-          await this.messageHandler(message);
-        }
-
-        // For InitializeRequest, create session if enabled
-        if (this.isInitializeRequest(message)) {
-          if (this.options.enableSessions && !sessionId) {
-            const newSessionId = this.generateSessionId();
-            const session: ClientSession = {
-              id: newSessionId,
-              streams: new Map(),
-              lastActivity: Date.now(),
-              messageQueue: [],
-              eventIdCounter: 0,
-            };
-            this.sessions.set(newSessionId, session);
-            res.setHeader('Mcp-Session-Id', newSessionId);
-          }
-        }
-
-        // For the SSE path (response delivered via an open event-stream) just
-        // acknowledge receipt. Same for notifications/requests without an id.
-        if (useSseStream || requestId === undefined || requestId === null) {
-          res.status(202).send('');
-        }
-      }
-    } catch (error: unknown) {
-      console.error('POST error:', error);
-      res.status(500).json({
-        jsonrpc: '2.0',
-        error: { code: -32603, message: 'Internal error' }
-      });
-    }
-  }
-
-  /**
-   * Handle GET requests (client opening SSE stream)
-   */
-  private handleGet(req: Request, res: Response): void {
-    const sessionId = req.get('Mcp-Session-Id');
-    const lastEventId = req.get('Last-Event-ID');
-    const accept = req.get('Accept') || '';
-
-    // Check if client explicitly doesn't want SSE (e.g., asking for JSON only)
-    const rejectsSSE = accept && !accept.includes('*/*') && !accept.includes('text/event-stream') && accept.length > 0;
-    if (rejectsSSE) {
-      res.status(405).send('Method Not Allowed - This endpoint provides Server-Sent Events');
-      return;
-    }
-
-    // Check session
-    let session: ClientSession | undefined;
-    if (this.options.enableSessions) {
-      if (!sessionId) {
-        res.status(400).json({ error: 'Mcp-Session-Id required' });
-        return;
-      }
-      session = this.sessions.get(sessionId);
       if (!session) {
-        res.status(404).json({ error: 'Session not found' });
-        return;
-      }
-      session.lastActivity = Date.now();
-    }
-
-    // Setup SSE
-    // CRITICAL: Set CORS headers for SSE if enabled (must be before flushHeaders)
-    // SSE connections need CORS headers explicitly set before the stream starts
-    if (this.options.enableCors) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID');
-      res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
-    }
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-
-    // Create stream
-    const streamId = uuidv4();
-    const stream: SSEStream = {
-      id: streamId,
-      response: res,
-      eventIdCounter: 0,
-      closed: false,
-    };
-
-    // Send endpoint event immediately (required by MCP SDK)
-    // This tells the client where to POST messages
-    // Support X-Forwarded-Proto for reverse proxies (production deployments)
-    // This ensures the endpoint URL matches the client's connection protocol (HTTPS)
-    const protocol = req.get('x-forwarded-proto') || req.protocol || 'http';
-
-    // Detect client format based on request URL:
-    // - If client connects to /mcp/sse (old format) → return /mcp/message as endpoint
-    // - If client connects to /mcp (new format) → return /mcp as endpoint
-    // Use originalUrl or url to get the full path including /sse
-    const requestPath = req.originalUrl || req.url || req.path;
-    const isOldFormat = requestPath.includes(`${this.options.endpoint}/sse`) ||
-      requestPath.endsWith('/sse') ||
-      req.path === `${this.options.endpoint}/sse`;
-    const messageEndpoint = isOldFormat
-      ? `${this.options.endpoint}/message`  // Old format: POST to /mcp/message
-      : this.options.endpoint;                // New format: POST to /mcp
-
-    const endpointUrl = `${protocol}://${req.get('host')}${messageEndpoint}`;
-
-    try {
-      res.write(`event: endpoint\n`);
-      res.write(`data: ${endpointUrl}\n\n`);
-    } catch (error) {
-      console.error('Error sending endpoint event:', error);
-      stream.closed = true;
-      return;
-    }
-
-    // Add to session or activeStreams
-    if (session) {
-      session.streams.set(streamId, stream);
-
-      // Resume support: replay messages after lastEventId
-      if (lastEventId) {
-        this.replayMessages(session, stream, lastEventId);
-      }
-    } else {
-      // Sessionless mode: track in activeStreams
-      this.activeStreams.set(streamId, stream);
-    }
-
-    // Handle client disconnect
-    req.on('close', () => {
-      stream.closed = true;
-      if (session) {
-        session.streams.delete(streamId);
-      } else {
-        this.activeStreams.delete(streamId);
-      }
-    });
-
-    // Send ping every 30 seconds to keep connection alive
-    const pingInterval = setInterval(() => {
-      if (stream.closed) {
-        clearInterval(pingInterval);
-        return;
-      }
-      try {
-        res.write(': ping\n\n');
-      } catch (error) {
-        clearInterval(pingInterval);
-        stream.closed = true;
-      }
-    }, 30000);
-  }
-
-  /**
-   * Handle DELETE requests (session termination)
-   */
-  private handleDelete(req: Request, res: Response): void {
-    const sessionId = req.get('Mcp-Session-Id');
-
-    if (!sessionId) {
-      res.status(400).json({ error: 'Mcp-Session-Id required' });
-      return;
-    }
-
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      res.status(404).json({ error: 'Session not found' });
-      return;
-    }
-
-    // Close all streams
-    for (const stream of session.streams.values()) {
-      try {
-        stream.response.end();
-        stream.closed = true;
-      } catch (error) {
-        // Ignore
-      }
-    }
-
-    // Remove session
-    this.sessions.delete(sessionId);
-    res.status(200).json({ status: 'session terminated' });
-  }
-
-  /**
-   * Start SSE stream for a request
-   */
-  private async startSSEStream(
-    req: Request,
-    res: Response,
-    request: JSONRPCRequest,
-    sessionId?: string
-  ): Promise<void> {
-    // Setup SSE
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-
-    // Create stream
-    const streamId = uuidv4();
-    const stream: SSEStream = {
-      id: streamId,
-      response: res,
-      eventIdCounter: 0,
-      closed: false,
-    };
-
-    // Store stream reference for this request
-    (req as any)._mcpStreamId = streamId;
-    (req as any)._mcpStream = stream;
-
-    // Add to session or activeStreams
-    if (sessionId) {
-      const session = this.sessions.get(sessionId);
-      if (session) {
-        session.streams.set(streamId, stream);
-      }
-    } else {
-      // Sessionless mode: track in activeStreams
-      this.activeStreams.set(streamId, stream);
-    }
-
-    // Handle client disconnect
-    req.on('close', () => {
-      stream.closed = true;
-      if (sessionId) {
-        const session = this.sessions.get(sessionId);
-        if (session) {
-          session.streams.delete(streamId);
-        }
-      } else {
-        this.activeStreams.delete(streamId);
-      }
-    });
-  }
-
-  /**
-   * Whether there is at least one open SSE stream (session-based or sessionless)
-   * that a response could be delivered on.
-   */
-  private hasOpenStreams(): boolean {
-    for (const stream of this.activeStreams.values()) {
-      if (!stream.closed) return true;
-    }
-    for (const session of this.sessions.values()) {
-      for (const stream of session.streams.values()) {
-        if (!stream.closed) return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Send message to client(s)
-   */
-  async send(message: JSONRPCMessage): Promise<void> {
-    // Find target session/stream
-    // For responses, send to the stream that made the request
-    if (this.isResponse(message)) {
-      const response = message as JSONRPCResponse;
-      if (response.id !== undefined && response.id !== null) {
-        const pendingRes = this.pendingResponses.get(response.id);
-        if (pendingRes) {
-          this.pendingResponses.delete(response.id);
-          pendingRes.setHeader('Content-Type', 'application/json');
-          pendingRes.status(200).json(response);
+        if (req.method === 'POST' && this.isInitializeRequest(req.body)) {
+          session = await this.createSession();
+        } else {
+          res.status(400).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32000,
+              message: 'Bad Request: no valid session ID provided',
+            },
+            id: null,
+          });
           return;
         }
       }
-      await this.sendToRequestStream(response);
-      return;
-    }
 
-    // For requests and notifications, send to all active streams
-    // First, send to session-based streams
-    for (const session of this.sessions.values()) {
-      for (const stream of session.streams.values()) {
-        if (!stream.closed) {
-          await this.sendToStream(stream, message, session);
-        }
-      }
-    }
-
-    // Then, send to sessionless streams
-    for (const stream of this.activeStreams.values()) {
-      if (!stream.closed) {
-        await this.sendToStreamSessionless(stream, message);
+      // Cast around the SDK's expected node req/res types: Express augments
+      // Request with nitrostack's own `auth` shape which differs from the SDK's.
+      await session.transport.handleRequest(req as any, res as any, req.body);
+    } catch (error: unknown) {
+      console.error('MCP request error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: '2.0',
+          error: { code: -32603, message: 'Internal error' },
+          id: null,
+        });
       }
     }
   }
 
   /**
-   * Send message to a specific stream
+   * Create a new MCP session: a fresh configured MCP server connected to a new
+   * official Streamable HTTP transport. The transport registers itself in the
+   * session map once it has negotiated a session id, and removes itself on close.
    */
-  private async sendToStream(
-    stream: SSEStream,
-    message: JSONRPCMessage,
-    session: ClientSession
-  ): Promise<void> {
-    try {
-      const eventId = `${session.id}-${++stream.eventIdCounter}`;
-      const data = JSON.stringify(message);
+  private async createSession(): Promise<McpSession> {
+    if (!this.mcpServerFactory) {
+      throw new Error('StreamableHttpTransport: MCP server factory not set');
+    }
 
-      stream.response.write(`id: ${eventId}\n`);
-      stream.response.write(`data: ${data}\n\n`);
+    const server = this.mcpServerFactory();
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => uuidv4(),
+      onsessioninitialized: (sid: string) => {
+        this.mcpSessions.set(sid, { server, transport });
+      },
+    });
 
-      // Store in queue for resumability
-      session.messageQueue.push({
-        message,
-        streamId: stream.id,
-        eventId,
+    transport.onclose = () => {
+      const sid = transport.sessionId;
+      if (sid) {
+        this.mcpSessions.delete(sid);
+      }
+      server.close().catch(() => {
+        // ignore close errors
       });
-    } catch (error) {
-      console.error('Error sending to stream:', error);
-      stream.closed = true;
-    }
-  }
+    };
 
-  /**
-   * Send response to the stream that made the request
-   */
-  private async sendToRequestStream(response: JSONRPCResponse): Promise<void> {
-    // Find the stream associated with this request
-    // For session-based streams
-    for (const session of this.sessions.values()) {
-      for (const stream of session.streams.values()) {
-        if (!stream.closed) {
-          await this.sendToStream(stream, response, session);
-          // Keep stream open for multiple requests - stream will close when client disconnects
-        }
-      }
-    }
-
-    // For sessionless streams - CRITICAL: Keep stream open for multiple requests
-    // The SSE stream should stay open to handle initialize, ping, tool calls, etc.
-    // Closing it after the first response breaks subsequent requests
-    for (const stream of this.activeStreams.values()) {
-      if (!stream.closed) {
-        await this.sendToStreamSessionless(stream, response);
-        // Keep stream open - it will be closed when the client disconnects naturally
-      }
-    }
-  }
-
-  /**
-   * Send message to a sessionless stream
-   */
-  private async sendToStreamSessionless(
-    stream: SSEStream,
-    message: JSONRPCMessage
-  ): Promise<void> {
-    try {
-      const eventId = `${stream.id}-${++stream.eventIdCounter}`;
-      const data = JSON.stringify(message);
-
-      stream.response.write(`id: ${eventId}\n`);
-      stream.response.write(`data: ${data}\n\n`);
-    } catch (error) {
-      console.error('Error sending to sessionless stream:', error);
-      stream.closed = true;
-      this.activeStreams.delete(stream.id);
-    }
-  }
-
-  /**
-   * Replay messages for resumability
-   */
-  private replayMessages(
-    session: ClientSession,
-    stream: SSEStream,
-    lastEventId: string
-  ): void {
-    const messages = session.messageQueue.filter(
-      (msg) => msg.streamId === stream.id && msg.eventId! > lastEventId
-    );
-
-    for (const { message, eventId } of messages) {
-      try {
-        const data = JSON.stringify(message);
-        stream.response.write(`id: ${eventId}\n`);
-        stream.response.write(`data: ${data}\n\n`);
-      } catch (error) {
-        console.error('Error replaying message:', error);
-        break;
-      }
-    }
+    await server.connect(transport);
+    return { server, transport };
   }
 
   /**
@@ -844,9 +379,7 @@ export class StreamableHttpTransport implements Transport {
           server.removeListener('error', errorHandler);
 
           server.on('error', (error) => {
-            if (this.errorHandler) {
-              this.errorHandler(error);
-            }
+            console.error('Streamable HTTP server error:', error.message);
           });
 
           this.server = server;
@@ -874,26 +407,24 @@ export class StreamableHttpTransport implements Transport {
   }
 
   /**
-   * Close the transport
+   * Close the transport: tear down all live MCP sessions and the HTTP server.
    */
   async close(): Promise<void> {
-    // Clear session cleanup
-    if (this.sessionCleanupInterval) {
-      clearInterval(this.sessionCleanupInterval);
-    }
-
-    // Close all sessions
-    for (const session of this.sessions.values()) {
-      for (const stream of session.streams.values()) {
-        try {
-          stream.response.end();
-          stream.closed = true;
-        } catch (error) {
-          // Ignore
-        }
+    // Close all live MCP sessions (SDK transports + their servers)
+    const sessions = Array.from(this.mcpSessions.values());
+    this.mcpSessions.clear();
+    for (const { server, transport } of sessions) {
+      try {
+        await transport.close();
+      } catch {
+        // ignore
+      }
+      try {
+        await server.close();
+      } catch {
+        // ignore
       }
     }
-    this.sessions.clear();
 
     // Close HTTP server
     if (this.server) {
@@ -907,84 +438,21 @@ export class StreamableHttpTransport implements Transport {
           if (err) {
             console.error('HTTP server close error:', err.message);
           }
-          if (this.closeHandler) {
-            this.closeHandler();
-          }
           resolve();
         });
       });
     }
-
-    if (this.closeHandler) {
-      this.closeHandler();
-    }
   }
 
   /**
-   * Set message handler
+   * Whether a parsed JSON-RPC body is an `initialize` request.
    */
-  set onmessage(handler: (message: JSONRPCMessage) => Promise<void>) {
-    this.messageHandler = handler;
-  }
-
-  /**
-   * Set close handler
-   */
-  set onclose(handler: () => void) {
-    this.closeHandler = handler;
-  }
-
-  /**
-   * Set error handler
-   */
-  set onerror(handler: (error: Error) => void) {
-    this.errorHandler = handler;
-  }
-
-  /**
-   * Start session cleanup interval
-   */
-  private startSessionCleanup(): void {
-    this.sessionCleanupInterval = setInterval(() => {
-      const now = Date.now();
-      for (const [sessionId, session] of this.sessions.entries()) {
-        if (now - session.lastActivity > this.options.sessionTimeout) {
-          // Cleanup expired session
-          for (const stream of session.streams.values()) {
-            try {
-              stream.response.end();
-              stream.closed = true;
-            } catch (error) {
-              // Ignore
-            }
-          }
-          this.sessions.delete(sessionId);
-          console.error(`Session ${sessionId} expired and cleaned up`);
-        }
-      }
-    }, 60000); // Check every minute
-  }
-
-  /**
-   * Helper methods
-   */
-
-  private generateSessionId(): string {
-    return uuidv4();
-  }
-
-  private getMessageType(message: JSONRPCMessage): 'request' | 'response' | 'notification' {
-    if ('method' in message && 'id' in message) return 'request';
-    if ('result' in message || 'error' in message) return 'response';
-    return 'notification';
-  }
-
-  private isResponse(message: JSONRPCMessage): boolean {
-    return 'result' in message || 'error' in message;
-  }
-
-  private isInitializeRequest(message: JSONRPCMessage): boolean {
-    return 'method' in message && (message as any).method === 'initialize';
+  private isInitializeRequest(message: unknown): boolean {
+    return (
+      !!message &&
+      typeof message === 'object' &&
+      (message as { method?: unknown }).method === 'initialize'
+    );
   }
 
   private isLocalhost(host: string): boolean {

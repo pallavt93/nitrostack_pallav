@@ -26,10 +26,14 @@ jest.unstable_mockModule('express', () => ({
 
 // Mock http
 const mockCreateServer = jest.fn();
+class MockHttpServer {}
 jest.unstable_mockModule('http', () => ({
     default: {
         createServer: mockCreateServer,
-    }
+        Server: MockHttpServer,
+    },
+    createServer: mockCreateServer,
+    Server: MockHttpServer,
 }));
 
 // Mock uuid
@@ -84,20 +88,15 @@ describe('Transports', () => {
             (mockListen as any).mockReturnValue(mockServer);
             await transport.start();
 
-            // Check that POST routes are setup
+            // The /mcp endpoint is delegated to the official SDK transport for
+            // all three verbs; only the health route lives alongside it.
             expect(mockPost).toHaveBeenCalledWith('/mcp', expect.any(Function));
-            expect(mockPost).toHaveBeenCalledWith('/mcp/message', expect.any(Function));
-
-            // Check that GET routes are setup
             expect(mockGet).toHaveBeenCalledWith('/mcp', expect.any(Function));
-            expect(mockGet).toHaveBeenCalledWith('/mcp/sse', expect.any(Function));
             expect(mockGet).toHaveBeenCalledWith('/mcp/health', expect.any(Function));
-
-            // Check that DELETE routes are setup
             expect(mockDelete).toHaveBeenCalledWith('/mcp', expect.any(Function));
         });
 
-        it('should setup CORS OPTIONS handlers when enabled', async () => {
+        it('should setup CORS OPTIONS handler when enabled', async () => {
             const transport = new StreamableHttpTransport({ enableCors: true, endpoint: '/mcp' });
             const mockServer = {
                 once: jest.fn((event: string, cb: any) => {
@@ -111,8 +110,6 @@ describe('Transports', () => {
             await transport.start();
 
             expect(mockOptions).toHaveBeenCalledWith('/mcp', expect.any(Function));
-            expect(mockOptions).toHaveBeenCalledWith('/mcp/sse', expect.any(Function));
-            expect(mockOptions).toHaveBeenCalledWith('/mcp/message', expect.any(Function));
         });
 
         it('should start HTTP server', async () => {
@@ -150,28 +147,11 @@ describe('Transports', () => {
             expect(mockServer.close).toHaveBeenCalled();
         });
 
-        it('should register message handler', async () => {
+        it('should accept an MCP server factory', () => {
             const transport = new StreamableHttpTransport();
-            const handler = jest.fn();
+            const factory = jest.fn();
 
-            transport.onmessage = handler as any;
-            // Handler is stored internally
-            expect(transport).toBeDefined();
-        });
-
-        it('should register close handler', async () => {
-            const transport = new StreamableHttpTransport();
-            const handler = jest.fn();
-
-            transport.onclose = handler as any;
-            expect(transport).toBeDefined();
-        });
-
-        it('should register error handler', async () => {
-            const transport = new StreamableHttpTransport();
-            const handler = jest.fn();
-
-            transport.onerror = handler as any;
+            transport.setMcpServerFactory(factory as any);
             expect(transport).toBeDefined();
         });
 

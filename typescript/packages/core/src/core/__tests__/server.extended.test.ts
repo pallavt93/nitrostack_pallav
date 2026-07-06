@@ -33,7 +33,7 @@ jest.unstable_mockModule('../transports/streamable-http.js', () => ({
         close: jest.fn(),
         setToolsCallback: jest.fn(),
         setServerConfig: jest.fn(),
-        onmessage: undefined,
+        setMcpServerFactory: jest.fn(),
         name: 'test',
         version: '1.0.0'
     }))

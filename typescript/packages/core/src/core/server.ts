@@ -13,8 +13,6 @@ import {
   ListResourceTemplatesRequestSchema,
   SubscribeRequestSchema,
   UnsubscribeRequestSchema,
-  LATEST_PROTOCOL_VERSION,
-  SUPPORTED_PROTOCOL_VERSIONS,
 } from '@modelcontextprotocol/sdk/types.js';
 import { Tool } from './tool.js';
 import { Resource, ResourceTemplate, createResource } from './resource.js';
@@ -69,36 +67,12 @@ interface ModuleInstance {
 interface HttpTransport {
   start(): Promise<void>;
   close(): Promise<void>;
-  send(message: JsonRpcResponse): Promise<void>;
-  onmessage?: (message: JsonRpcRequest) => Promise<void>;
+  /** Provide the factory used to build a configured MCP server per /mcp session. */
+  setMcpServerFactory?(factory: () => McpServer): void;
   setToolsCallback?(callback: () => Promise<unknown[]>): void;
   setServerConfig?(config: { name: string; version: string; description?: string }): void;
   /** StreamableHttpTransport exposes the Express app for extra routes (legacy SDK SSE). */
   getApp?(): Express;
-}
-
-/**
- * JSON-RPC request structure
- */
-interface JsonRpcRequest {
-  jsonrpc: '2.0';
-  id?: string | number | null;
-  method?: string;
-  params?: Record<string, unknown>;
-}
-
-/**
- * JSON-RPC response structure
- */
-interface JsonRpcResponse {
-  jsonrpc: '2.0';
-  id: string | number | null;
-  result?: unknown;
-  error?: {
-    code: number;
-    message: string;
-    data?: unknown;
-  };
 }
 
 /**
@@ -205,6 +179,24 @@ export class NitroStackServer {
   };
 
   /**
+   * Build a fresh MCP server instance wired with all of this application's
+   * tool/resource/prompt handlers. Used for transports that require their own
+   * server instance (legacy SSE sessions, official Streamable HTTP sessions),
+   * since a single SDK server can only be connected to one transport at a time.
+   */
+  public createConfiguredMcpServer(): McpServer {
+    const mcp = new McpServer(
+      {
+        name: this.config.name,
+        version: this.config.version,
+      },
+      NitroStackServer.mcpServerOptions,
+    );
+    this.setupHandlersOn(mcp);
+    return mcp;
+  }
+
+  /**
    * SDK-compatible legacy HTTP+SSE: GET /sse (SSEServerTransport) and POST /mcp/messages?sessionId=.
    * Streamable HTTP stays on GET/POST /mcp.
    */
@@ -219,14 +211,7 @@ export class NitroStackServer {
 
     app.get(LEGACY_SSE_PATH, async (req, res) => {
       try {
-        const sessionMcp = new McpServer(
-          {
-            name: this.config.name,
-            version: this.config.version,
-          },
-          NitroStackServer.mcpServerOptions,
-        );
-        this.setupHandlersOn(sessionMcp);
+        const sessionMcp = this.createConfiguredMcpServer();
 
         const transport = new SSEServerTransport(LEGACY_MESSAGES_PATH, res);
         const sessionId = transport.sessionId;
@@ -1080,6 +1065,10 @@ export class NitroStackServer {
         enableCors: process.env.ENABLE_CORS !== 'false',
       });
 
+      // Delegate /mcp protocol handling to the official SDK transport: each
+      // session gets its own configured MCP server built via this factory.
+      httpTransport.setMcpServerFactory(() => this.createConfiguredMcpServer());
+
       // Set up tools callback and server config for documentation page
       httpTransport.setToolsCallback(async () => {
         const tools = await Promise.all(
@@ -1149,99 +1138,27 @@ export class NitroStackServer {
         // STDIO: For direct MCP connections (dev tools, Claude Desktop)
         // HTTP SSE: For web-based clients and multiple concurrent connections
 
-        // 1. Start HTTP SSE transport (reuse if already created by start())
+        // 1. Ensure the HTTP host is running (normally created by start()).
+        // The host owns /mcp and delegates protocol handling to the official SDK
+        // Streamable HTTP transport via the MCP server factory (one server per
+        // session), so no manual message forwarding is required here.
         let httpTransport = this._httpTransport;
         if (!httpTransport) {
           const { StreamableHttpTransport } = await import('./transports/streamable-http.js');
-          httpTransport = new StreamableHttpTransport({
+          const transport = new StreamableHttpTransport({
             port: transportOptions?.port || 3000,
             host: transportOptions?.host || 'localhost',
             endpoint: transportOptions?.endpoint || '/mcp',
-            enableSessions: false, // Disable sessions for simpler backward compat
             enableCors: transportOptions?.enableCors !== false, // Enable CORS by default for web clients
-          }) as HttpTransport;
-          this.attachLegacySdkSseIfNeeded(httpTransport);
-          await httpTransport.start();
+          });
+          transport.setMcpServerFactory(() => this.createConfiguredMcpServer());
+          this.attachLegacySdkSseIfNeeded(transport as HttpTransport);
+          await transport.start();
+          httpTransport = transport as HttpTransport;
           this._httpTransport = httpTransport;
         }
 
-        // Wire up HTTP transport to handle MCP messages
-        // Since we can't connect to two transports, manually forward HTTP messages
-        const transport = httpTransport;
-        transport.onmessage = async (message: JsonRpcRequest) => {
-          // Handle the message through the MCP server's internal handler
-          try {
-            const internals = this.getMcpInternalHandlers();
-
-            if (message && message.method) {
-              const isRequest = message.id !== undefined && message.id !== null;
-
-              if (isRequest) {
-                if (message.method === 'initialize') {
-                  await transport.send({
-                    jsonrpc: '2.0',
-                    id: message.id!,
-                    result: {
-                      protocolVersion: this.negotiateProtocolVersion(
-                        (message as any).params?.protocolVersion
-                      ),
-                      capabilities: NitroStackServer.mcpServerOptions.capabilities,
-                      serverInfo: {
-                        name: this.config.name,
-                        version: this.config.version,
-                      }
-                    }
-                  });
-                  return;
-                }
-
-                const handler = internals.requestHandlers?.get(message.method);
-                if (handler) {
-                  const extra = {
-                    signal: new AbortController().signal,
-                    requestId: message.id!,
-                    sendNotification: async (notification: any) => {
-                      await transport.send(notification);
-                    },
-                    sendRequest: async () => {
-                      throw new Error('sendRequest not supported in dual transport mode');
-                    }
-                  };
-
-                  const result = await handler(message, extra);
-                  // Send response back through HTTP transport
-                  await transport.send({
-                    jsonrpc: '2.0',
-                    id: message.id!,
-                    result,
-                  });
-                } else {
-                  this.logger.warn(`[Dual Mode] No request handler found for method: ${message.method}`);
-                }
-              } else {
-                const notificationHandler = internals.notificationHandlers?.get(message.method);
-                if (notificationHandler) {
-                  await notificationHandler(message);
-                } else {
-                  this.logger.warn(`[Dual Mode] No notification handler found for method: ${message.method}`);
-                }
-              }
-            }
-          } catch (error: unknown) {
-            const err = error as Error;
-            // Send error response
-            await transport.send({
-              jsonrpc: '2.0',
-              id: message.id ?? null,
-              error: {
-                code: -32603,
-                message: err.message || 'Internal error',
-              },
-            });
-          }
-        };
-
-        // 2. Connect MCP server via STDIO for direct connections
+        // 2. Connect the primary MCP server via STDIO for direct connections.
         const stdioTransport = new StdioServerTransport();
         await this.mcpServer.connect(stdioTransport);
 
@@ -1261,9 +1178,11 @@ export class NitroStackServer {
             port: transportOptions?.port || 3000,
             host: transportOptions?.host || 'localhost',
             endpoint: transportOptions?.endpoint || '/mcp',
-            enableSessions: true,
             enableCors: transportOptions?.enableCors || false,
           });
+
+          // Delegate /mcp protocol handling to the official SDK transport.
+          transport.setMcpServerFactory(() => this.createConfiguredMcpServer());
 
           // Set up tools callback and server config for documentation page
           transport.setToolsCallback(async () => {
@@ -1280,14 +1199,14 @@ export class NitroStackServer {
 
           this.attachLegacySdkSseIfNeeded(transport as HttpTransport);
 
-          // Start HTTP server first
+          // Start HTTP server
           await transport.start();
           httpTransport = transport as HttpTransport;
           this._httpTransport = httpTransport;
         }
 
-        // Then connect MCP server
-        await this.mcpServer.connect(httpTransport as unknown as StdioServerTransport);
+        // The HTTP host owns /mcp and manages its own per-session MCP servers via
+        // the factory; no direct mcpServer.connect() is needed here.
 
         this.logger.info(`${this.config.name} started successfully (HTTP SSE transport)`);
         this.logger.info(`✨ Mode: ${getAppMode().toUpperCase()} (via NITROSTACK_APP_MODE)`);
@@ -1501,59 +1420,6 @@ export class NitroStackServer {
    */
   getHttpTransport(): HttpTransport | undefined {
     return this._httpTransport;
-  }
-
-  /**
-   * Negotiate the MCP protocol version for the dual-mode initialize handshake.
-   * Echoes the client's requested version when we support it, otherwise falls
-   * back to the latest version advertised by the installed SDK.
-   */
-  private negotiateProtocolVersion(requested?: unknown): string {
-    if (typeof requested === 'string' && SUPPORTED_PROTOCOL_VERSIONS.includes(requested)) {
-      return requested;
-    }
-    return LATEST_PROTOCOL_VERSION;
-  }
-
-  /**
-   * Safely extract the MCP SDK's internal request/notification handler maps.
-   * These are private SDK internals used only for dual-mode message forwarding;
-   * access is isolated here so an SDK upgrade that changes the shape degrades
-   * gracefully (with a warning) instead of silently dropping every message.
-   */
-  private getMcpInternalHandlers(): {
-    requestHandlers?: Map<string, (req: JsonRpcRequest, extra: unknown) => Promise<unknown>>;
-    notificationHandlers?: Map<string, (req: JsonRpcRequest) => Promise<unknown>>;
-  } {
-    const mcpServerInternal = this.mcpServer as any;
-    const customHandlers = mcpServerInternal?._requestHandlers;
-    const sdkHandlers = mcpServerInternal?.server?._requestHandlers;
-    const notificationHandlers =
-      mcpServerInternal?.server?._notificationHandlers ?? mcpServerInternal?._notificationHandlers;
-
-    const requestHandlers = sdkHandlers ?? customHandlers;
-
-    if (!requestHandlers && !notificationHandlers) {
-      this.logger.warn(
-        '[Dual Mode] Unable to locate MCP SDK internal handler maps. ' +
-        'The @modelcontextprotocol/sdk internals may have changed; dual-mode HTTP forwarding may not work.'
-      );
-    }
-
-    // Merge SDK + custom request handlers so both surfaces remain reachable.
-    // Spread custom first then SDK so SDK handlers win on key collisions,
-    // preserving the original `sdkHandlers ?? customHandlers` precedence.
-    let mergedRequestHandlers = requestHandlers as
-      | Map<string, (req: JsonRpcRequest, extra: unknown) => Promise<unknown>>
-      | undefined;
-    if (sdkHandlers && customHandlers && sdkHandlers !== customHandlers) {
-      mergedRequestHandlers = new Map([...customHandlers, ...sdkHandlers]);
-    }
-
-    return {
-      requestHandlers: mergedRequestHandlers,
-      notificationHandlers: notificationHandlers ?? customHandlers,
-    };
   }
 }
 
