@@ -96,7 +96,7 @@ describe('OAuthModule discovery handlers', () => {
     });
 
     describe('wellKnownHandler', () => {
-        it('uses x-forwarded-proto for the registration endpoint and caches upstream metadata', async () => {
+        it('derives the registration endpoint from resourceUri (ignoring a spoofed Host) and caches upstream metadata', async () => {
             const fetchMock = jest.fn(async () => ({
                 ok: true,
                 json: async () => ({ issuer: 'https://auth.example.com' }),
@@ -104,12 +104,13 @@ describe('OAuthModule discovery handlers', () => {
             global.fetch = fetchMock;
 
             const module = createModule({ enableClientRegistration: true, staticClientId: 'configured-client' });
+            // A spoofed Host / X-Forwarded-Proto must NOT influence the advertised endpoint.
             const req = { headers: { host: 'mcp.example.com', 'x-forwarded-proto': 'https' } };
 
             const res1 = createMockRes();
             await (module as any).wellKnownHandler(req, res1);
             const meta1 = JSON.parse(res1.body);
-            expect(meta1.registration_endpoint).toBe('https://mcp.example.com/oauth/v2/register');
+            expect(meta1.registration_endpoint).toBe('https://api.example.com/oauth/v2/register');
 
             const res2 = createMockRes();
             await (module as any).wellKnownHandler(req, res2);
@@ -131,7 +132,7 @@ describe('OAuthModule discovery handlers', () => {
             expect(meta.registration_endpoint).toBeUndefined();
         });
 
-        it('falls back to https scheme for the registration endpoint when enabled', async () => {
+        it('derives the registration endpoint from resourceUri origin when enabled (fallback metadata path)', async () => {
             global.fetch = (jest.fn(async () => ({ ok: false, json: async () => ({}) })) as any);
 
             const module = createModule({ enableClientRegistration: true, staticClientId: 'configured-client' });
@@ -141,7 +142,7 @@ describe('OAuthModule discovery handlers', () => {
             await (module as any).wellKnownHandler(req, res);
             const meta = JSON.parse(res.body);
 
-            expect(meta.registration_endpoint).toBe('https://mcp.example.com/oauth/v2/register');
+            expect(meta.registration_endpoint).toBe('https://api.example.com/oauth/v2/register');
         });
     });
 });

@@ -39,11 +39,13 @@ async function bootstrap() {
     // Create the MCP application
     const server = await McpApplicationFactory.create(AppModule);
 
+    const authEnforced = process.env.OAUTH_REQUIRED === 'true';
     console.error('✅ OAuth 2.1 Module configured');
     console.error(`   Resource URI: ${process.env.RESOURCE_URI}`);
     console.error(`   Auth Server: ${process.env.AUTH_SERVER_URL}`);
     console.error(`   Scopes: read, write, admin`);
-    console.error(`   Audience: ${process.env.TOKEN_AUDIENCE || process.env.RESOURCE_URI}\\n`);
+    console.error(`   Audience: ${process.env.TOKEN_AUDIENCE || process.env.RESOURCE_URI}`);
+    console.error(`   Enforcement: ${authEnforced ? 'ON (OAUTH_REQUIRED=true)' : 'OFF (dev mode — set OAUTH_REQUIRED=true to enforce)'}\\n`);
 
     // Start the server
     await server.start();

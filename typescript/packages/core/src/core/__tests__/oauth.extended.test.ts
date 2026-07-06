@@ -14,6 +14,7 @@ describe('OAuthModule Extended Tests', () => {
             getHttpTransport: function() { return this._httpTransport; }
         } as any;
         mockLogger = {
+            debug: jest.fn(),
             info: jest.fn(),
             warn: jest.fn(),
             error: jest.fn()
@@ -51,7 +52,8 @@ describe('OAuthModule Extended Tests', () => {
             resourceUri: 'http://res',
             authorizationServers: ['http://auth'],
             issuer: 'http://auth',
-            audience: 'http://res'
+            audience: 'http://res',
+            allowInsecureTokenDecode: true
         });
 
         const now = Math.floor(Date.now() / 1000);
@@ -89,6 +91,71 @@ describe('OAuthModule Extended Tests', () => {
         const res4 = await OAuthModule.validateToken(createToken({ aud: 'http://res', iss: 'wrong', exp: now + 3600 }));
         expect(res4.valid).toBe(false);
         expect(res4.error).toContain('issuer mismatch');
+    });
+
+    it('should fail closed when no verifier is configured and insecure decode is not enabled', async () => {
+        OAuthModule.forRoot({
+            resourceUri: 'http://res',
+            authorizationServers: ['http://auth'],
+            issuer: 'http://auth',
+            audience: 'http://res'
+            // no tokenIntrospectionEndpoint / jwksUri, no allowInsecureTokenDecode
+        });
+
+        const now = Math.floor(Date.now() / 1000);
+        const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64');
+        const data = Buffer.from(JSON.stringify({ iss: 'http://auth', aud: 'http://res', exp: now + 3600 })).toString('base64');
+        const token = `${header}.${data}.signature`;
+
+        const res = await OAuthModule.validateToken(token);
+        expect(res.valid).toBe(false);
+        expect(res.error).toContain('No token validation method configured');
+    });
+
+    it('should fail closed on a token missing the aud claim even with insecure decode', async () => {
+        OAuthModule.forRoot({
+            resourceUri: 'http://res',
+            authorizationServers: ['http://auth'],
+            audience: 'http://res',
+            allowInsecureTokenDecode: true
+        });
+
+        const now = Math.floor(Date.now() / 1000);
+        const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64');
+        const data = Buffer.from(JSON.stringify({ iss: 'http://auth', exp: now + 3600 })).toString('base64');
+        const token = `${header}.${data}.signature`;
+
+        const res = await OAuthModule.validateToken(token);
+        expect(res.valid).toBe(false);
+        expect(res.error).toContain('audience');
+    });
+
+    it('resourceMetadataHandler emits CORS headers and handles OPTIONS', () => {
+        const config = {
+            resourceUri: 'http://test/mcp',
+            authorizationServers: ['http://auth'],
+            scopesSupported: ['read']
+        };
+        const module = new OAuthModule(config, mockServer, mockLogger);
+
+        // GET-style request
+        const getRes = { writeHead: jest.fn(), end: jest.fn() };
+        (module as any).resourceMetadataHandler({ method: 'GET' }, getRes);
+        expect(getRes.writeHead).toHaveBeenCalledWith(200, expect.objectContaining({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS'
+        }));
+        const body = JSON.parse((getRes.end as any).mock.calls[0][0]);
+        expect(body.resource).toBe('http://test/mcp');
+        expect(body.authorization_servers).toEqual(['http://auth']);
+
+        // OPTIONS preflight
+        const optRes = { writeHead: jest.fn(), end: jest.fn() };
+        (module as any).resourceMetadataHandler({ method: 'OPTIONS' }, optRes);
+        expect(optRes.writeHead).toHaveBeenCalledWith(200, expect.objectContaining({
+            'Access-Control-Allow-Origin': '*'
+        }));
+        expect(optRes.end).toHaveBeenCalledWith('');
     });
 
     it('should handle encrypted JWE tokens safely', async () => {
@@ -139,7 +206,8 @@ describe('OAuthModule Extended Tests', () => {
             resourceUri: 'http://res',
             authorizationServers: ['http://auth'],
             // @ts-ignore
-            customValidation: customSpy
+            customValidation: customSpy,
+            allowInsecureTokenDecode: true
         });
 
         const token = `header.${Buffer.from(JSON.stringify({ aud: 'http://res' })).toString('base64')}.sig`;
@@ -148,7 +216,85 @@ describe('OAuthModule Extended Tests', () => {
         expect(customSpy).toHaveBeenCalled();
     });
 
+    it('mounts auth middleware in dual mode only when auth is required', async () => {
+        const appUse = jest.fn();
+        const httpTransport = { on: jest.fn(), getApp: () => ({ use: appUse }) };
+        const dualServer = {
+            _transportType: 'dual',
+            _httpTransport: httpTransport,
+            getHttpTransport() { return this._httpTransport; }
+        } as any;
+
+        const module = new OAuthModule({
+            resourceUri: 'http://res',
+            authorizationServers: ['http://auth'],
+            jwksUri: 'http://auth/.well-known/jwks.json',
+            required: true
+        }, dualServer, mockLogger);
+
+        await module.start();
+        expect(appUse).toHaveBeenCalled();
+    });
+
+    it('does NOT mount auth middleware in dual mode when auth is not required', async () => {
+        const appUse = jest.fn();
+        const httpTransport = { on: jest.fn(), getApp: () => ({ use: appUse }) };
+        const dualServer = {
+            _transportType: 'dual',
+            _httpTransport: httpTransport,
+            getHttpTransport() { return this._httpTransport; }
+        } as any;
+
+        const module = new OAuthModule({
+            resourceUri: 'http://res',
+            authorizationServers: ['http://auth'],
+            required: false
+        }, dualServer, mockLogger);
+
+        await module.start();
+        expect(appUse).not.toHaveBeenCalled();
+    });
+
+    it('warns at startup when required but no token verifier is configured', async () => {
+        const httpTransport = { on: jest.fn(), getApp: () => ({ use: jest.fn() }) };
+        const dualServer = {
+            _transportType: 'dual',
+            _httpTransport: httpTransport,
+            getHttpTransport() { return this._httpTransport; }
+        } as any;
+
+        const module = new OAuthModule({
+            resourceUri: 'http://res',
+            authorizationServers: ['http://auth'],
+            required: true
+        }, dualServer, mockLogger);
+
+        await module.start();
+        expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('no token verifier is configured'));
+    });
+
+    it('warns at startup that auth is not enforced when not required', async () => {
+        const httpTransport = { on: jest.fn(), getApp: () => ({ use: jest.fn() }) };
+        const dualServer = {
+            _transportType: 'dual',
+            _httpTransport: httpTransport,
+            getHttpTransport() { return this._httpTransport; }
+        } as any;
+
+        const module = new OAuthModule({
+            resourceUri: 'http://res',
+            authorizationServers: ['http://auth'],
+            required: false
+        }, dualServer, mockLogger);
+
+        await module.start();
+        expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('NOT enforced'));
+    });
+
     it('should handle discovery handlers in dual mode', async () => {
+        // No upstream metadata -> wellKnownHandler uses the RFC 8414 fallback path.
+        global.fetch = (jest.fn(async () => ({ ok: false, json: async () => ({}) })) as any);
+
         const config = {
             resourceUri: 'http://test/mcp',
             authorizationServers: ['http://auth']
@@ -163,10 +309,11 @@ describe('OAuthModule Extended Tests', () => {
         await module.start();
         expect(dualServer._httpTransport.on).toHaveBeenCalled();
 
-        // Test discovery handlers directly for coverage
+        // Test discovery handlers directly for coverage. wellKnownHandler is async
+        // (it awaits upstream metadata), so it must be awaited before asserting.
         const req = {};
         const res = { writeHead: jest.fn(), end: jest.fn() };
-        (module as any).wellKnownHandler(req, res);
+        await (module as any).wellKnownHandler(req, res);
         expect(res.writeHead).toHaveBeenCalledWith(200, expect.any(Object));
 
         (module as any).resourceMetadataHandler(req, res);
