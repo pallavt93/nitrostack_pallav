@@ -87,6 +87,26 @@ export interface OAuthModuleConfig {
    * In-memory cache expiration for token introspection (defaults to 300)
    */
   tokenCacheSeconds?: number;
+
+  /**
+   * Enable the Dynamic Client Registration endpoint (RFC 7591) at /oauth/v2/register.
+   * Disabled by default. When disabled, the endpoint responds 404 and
+   * `registration_endpoint` is omitted from advertised metadata.
+   * Can also be enabled via the OAUTH_ENABLE_CLIENT_REGISTRATION=true env var.
+   */
+  enableClientRegistration?: boolean;
+
+  /**
+   * Static client id returned by the registration endpoint.
+   * Falls back to the OAUTH_CLIENT_ID environment variable. No literal default.
+   */
+  staticClientId?: string;
+
+  /**
+   * Static client secret returned by the registration endpoint.
+   * Falls back to the OAUTH_CLIENT_SECRET environment variable. No literal default.
+   */
+  staticClientSecret?: string;
 }
 
 /**
@@ -158,6 +178,43 @@ export class OAuthModule {
   private static discoveryInfo: OAuthDiscoveryInfo | null = null;
   private discoveryServer: DiscoveryHttpServer | null = null;
 
+  // Cache of upstream authorization-server metadata to avoid re-fetching on every request
+  private static discoveryMetadataCache = new Map<string, { data: any; expires: number }>();
+
+  private async fetchUpstreamMetadata(authServer: string): Promise<any | null> {
+    const now = Date.now();
+    const cached = OAuthModule.discoveryMetadataCache.get(authServer);
+    if (cached && cached.expires > now) {
+      return cached.data;
+    }
+
+    let metadata: any = null;
+    for (const suffix of ['/.well-known/openid-configuration', '/.well-known/oauth-authorization-server']) {
+      try {
+        const response = await fetch(`${authServer}${suffix}`);
+        if (response.ok) {
+          metadata = await response.json();
+          break;
+        }
+      } catch (e) {
+        // ignore and try next
+      }
+    }
+
+    if (metadata) {
+      const ttlSeconds = this.config.tokenCacheSeconds ?? 300;
+      OAuthModule.discoveryMetadataCache.set(authServer, { data: metadata, expires: now + ttlSeconds * 1000 });
+    }
+    return metadata;
+  }
+
+  private buildBaseUrl(req: unknown): string {
+    const reqHeaders = (req as any)?.headers ?? {};
+    const host = reqHeaders.host || 'localhost:3000';
+    const proto = reqHeaders['x-forwarded-proto'] || (process.env.NODE_ENV === 'production' ? 'https' : 'http');
+    return `${proto}://${host}`;
+  }
+
   private wellKnownHandler = async (
     req: unknown,
     res: { writeHead: (status: number, headers: Record<string, string>) => void; end: (data: string) => void }
@@ -169,36 +226,19 @@ export class OAuthModule {
       'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization',
     };
 
-    const host = (req as any).headers?.host || 'localhost:3000';
-    const registrationEndpoint = `http://${host}/oauth/v2/register`;
+    const registrationEndpoint = this.isClientRegistrationEnabled()
+      ? `${this.buildBaseUrl(req)}/oauth/v2/register`
+      : undefined;
 
     try {
       const authServer = this.config.authorizationServers[0];
-      let metadata: any = null;
+      const upstream = await this.fetchUpstreamMetadata(authServer);
 
-      try {
-        const response = await fetch(`${authServer}/.well-known/openid-configuration`);
-        if (response.ok) {
-          metadata = await response.json();
-        }
-      } catch (e) {
-        // ignore
-      }
-
-      if (!metadata) {
-        try {
-          const response = await fetch(`${authServer}/.well-known/oauth-authorization-server`);
-          if (response.ok) {
-            metadata = await response.json();
-          }
-        } catch (e) {
-          // ignore
-        }
-      }
-
-      if (metadata) {
+      if (upstream) {
+        // Clone before mutating so the cached object stays pristine
+        const metadata = { ...upstream };
         // Inject registration_endpoint to satisfy strict client schema validation (Cursor/OpenAI)
-        if (!metadata.registration_endpoint) {
+        if (registrationEndpoint && !metadata.registration_endpoint) {
           metadata.registration_endpoint = registrationEndpoint;
         }
         res.writeHead(200, headers);
@@ -210,23 +250,36 @@ export class OAuthModule {
     }
 
     // Fallback compliant with RFC 8414 / OIDC metadata schema
-    const fallbackMetadata = {
+    const fallbackMetadata: Record<string, unknown> = {
       issuer: this.config.issuer || this.config.authorizationServers[0],
       authorization_endpoint: `${this.config.authorizationServers[0]}/oauth/v2/authorize`,
       token_endpoint: `${this.config.authorizationServers[0]}/oauth/v2/token`,
       introspection_endpoint: this.config.tokenIntrospectionEndpoint || `${this.config.authorizationServers[0]}/oauth/v2/introspect`,
       jwks_uri: this.config.jwksUri || `${this.config.authorizationServers[0]}/oauth/v2/keys`,
-      registration_endpoint: registrationEndpoint,
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'client_credentials', 'refresh_token'],
       subject_types_supported: ['public'],
       id_token_signing_alg_values_supported: ['RS256'],
       code_challenge_methods_supported: ['S256'],
     };
+    if (registrationEndpoint) {
+      fallbackMetadata.registration_endpoint = registrationEndpoint;
+    }
 
     res.writeHead(200, headers);
     res.end(JSON.stringify(fallbackMetadata));
   };
+
+  /**
+   * Whether the static Dynamic Client Registration endpoint is enabled.
+   * Requires explicit opt-in AND a configured client id (never a literal default).
+   */
+  private isClientRegistrationEnabled(): boolean {
+    const enabled = this.config.enableClientRegistration === true
+      || process.env.OAUTH_ENABLE_CLIENT_REGISTRATION === 'true';
+    const clientId = this.config.staticClientId || process.env.OAUTH_CLIENT_ID;
+    return enabled && !!clientId;
+  }
 
   private registrationHandler = async (
     req: any,
@@ -242,6 +295,14 @@ export class OAuthModule {
     if (req.method === 'OPTIONS') {
       res.writeHead(200, headers);
       res.end('');
+      return;
+    }
+
+    // Registration is opt-in. Without explicit config + a configured client id we
+    // must not hand out any client credentials.
+    if (!this.isClientRegistrationEnabled()) {
+      res.writeHead(404, headers);
+      res.end(JSON.stringify({ error: 'not_found', error_description: 'Client registration is not enabled' }));
       return;
     }
 
@@ -264,24 +325,24 @@ export class OAuthModule {
       }
     }
 
-    // Read client ID from environment or default (from flight-booking-mcp app config)
-    const clientId = process.env.ZITADEL_CLIENT_ID || '378036683838275586';
+    // Client credentials come strictly from configuration / environment. No literal defaults.
+    const clientId = this.config.staticClientId || process.env.OAUTH_CLIENT_ID!;
+    const clientSecret = this.config.staticClientSecret || process.env.OAUTH_CLIENT_SECRET || '';
 
     const responsePayload = {
       client_id: clientId,
-      client_secret: process.env.ZITADEL_CLIENT_SECRET || '',
+      client_secret: clientSecret,
       client_id_issued_at: Math.floor(Date.now() / 1000),
       client_secret_expires_at: 0,
       grant_types: body.grant_types || ['authorization_code', 'refresh_token'],
       response_types: body.response_types || ['code'],
-      token_endpoint_auth_method: body.token_endpoint_auth_method || 'none',
+      token_endpoint_auth_method: body.token_endpoint_auth_method || (clientSecret ? 'client_secret_post' : 'none'),
       redirect_uris: body.redirect_uris || [],
     };
 
     res.writeHead(200, headers);
     res.end(JSON.stringify(responsePayload));
   };
-
 
   private resourceMetadataHandler = (req: unknown, res: { writeHead: (status: number, headers: Record<string, string>) => void; end: (data: string) => void }) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -450,9 +511,10 @@ export class OAuthModule {
   private registerDiscoveryHandlers(server: DiscoveryHttpServer | { on: (path: string, handler: unknown) => void }) {
     server.on('/.well-known/oauth-authorization-server', this.wellKnownHandler);
     server.on('/.well-known/oauth-protected-resource', this.resourceMetadataHandler);
-    server.on('/oauth/v2/register', this.registrationHandler);
+    if (this.isClientRegistrationEnabled()) {
+      server.on('/oauth/v2/register', this.registrationHandler);
+    }
   }
-
 
   /**
    * Get the current OAuth discovery info

@@ -10,7 +10,6 @@ import { upgradeCommand } from './commands/upgrade.js';
 import { installCommand } from './commands/install.js';
 import { cursorCommand } from './commands/cursor.js';
 
-
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
 
@@ -101,7 +100,6 @@ export { generate } from './commands/generate.js';
 export { upgradeCommand } from './commands/upgrade.js';
 export { installCommand } from './commands/install.js';
 export { cursorCommand } from './commands/cursor.js';
-
 
 // Run the CLI when this module is the entry point
 import { fileURLToPath } from 'url';

@@ -266,8 +266,6 @@ export class McpApplicationFactory {
       version: options.server?.version || '1.0.0',
     });
 
-
-
     // Now register and add dynamic modules (from forRoot() calls) to server
     for (const dynamicModule of dynamicModulesToAdd) {
       container.register(dynamicModule);

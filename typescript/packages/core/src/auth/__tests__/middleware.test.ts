@@ -124,6 +124,66 @@ describe('Auth Middleware', () => {
         });
     });
 
+    describe('discovery bypass', () => {
+        it('should protect tools/call (requires a token)', async () => {
+            const middleware = createAuthMiddleware(mockConfig);
+            (mockExtractBearerToken as any).mockReturnValue(null);
+            req = { headers: {}, method: 'POST', path: '/mcp', body: { method: 'tools/call' } };
+
+            await middleware(req, res, next);
+
+            expect(res.status).toHaveBeenCalledWith(401);
+            expect(next).not.toHaveBeenCalled();
+        });
+
+        it.each(['initialize', 'tools/list', 'resources/list', 'prompts/list'])(
+            'should bypass auth for discovery method %s',
+            async (method) => {
+                const middleware = createAuthMiddleware(mockConfig);
+                (mockExtractBearerToken as any).mockReturnValue(null);
+                req = { headers: {}, method: 'POST', path: '/mcp', body: { method } };
+
+                await middleware(req, res, next);
+
+                expect(next).toHaveBeenCalled();
+                expect(res.status).not.toHaveBeenCalled();
+            }
+        );
+
+        it('should bypass auth for /.well-known/* paths', async () => {
+            const middleware = createAuthMiddleware(mockConfig);
+            (mockExtractBearerToken as any).mockReturnValue(null);
+            req = { headers: {}, method: 'GET', path: '/.well-known/oauth-protected-resource' };
+
+            await middleware(req, res, next);
+
+            expect(next).toHaveBeenCalled();
+            expect(res.status).not.toHaveBeenCalled();
+        });
+
+        it('should bypass auth for OPTIONS preflight', async () => {
+            const middleware = createAuthMiddleware(mockConfig);
+            (mockExtractBearerToken as any).mockReturnValue(null);
+            req = { headers: {}, method: 'OPTIONS', path: '/mcp' };
+
+            await middleware(req, res, next);
+
+            expect(next).toHaveBeenCalled();
+            expect(res.status).not.toHaveBeenCalled();
+        });
+
+        it('should now protect arbitrary GET requests on the base path', async () => {
+            const middleware = createAuthMiddleware(mockConfig);
+            (mockExtractBearerToken as any).mockReturnValue(null);
+            req = { headers: {}, method: 'GET', path: '/mcp' };
+
+            await middleware(req, res, next);
+
+            expect(res.status).toHaveBeenCalledWith(401);
+            expect(next).not.toHaveBeenCalled();
+        });
+    });
+
     describe('optionalAuth', () => {
         it('should proceed unauthenticated if no token', async () => {
             const middleware = optionalAuth(mockConfig);

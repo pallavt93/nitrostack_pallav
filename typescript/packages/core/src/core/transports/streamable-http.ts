@@ -402,8 +402,18 @@ export class StreamableHttpTransport implements Transport {
         const reqMessage = message as JSONRPCRequest;
         const requestId = reqMessage.id;
 
-        // Store response object to respond directly
-        if (requestId !== undefined && requestId !== null) {
+        // Accept-based response negotiation.
+        // - Direct JSON response (default, modern Streamable HTTP behavior).
+        // - SSE stream: only when the client explicitly wants text/event-stream,
+        //   is not also willing to accept JSON, and has an open SSE stream to
+        //   deliver the response on. This preserves legacy SSE-only clients while
+        //   keeping direct-JSON for everyone else.
+        const wantsSSE = accept.includes('text/event-stream');
+        const wantsJSON = accept.includes('application/json');
+        const useSseStream = wantsSSE && !wantsJSON && this.hasOpenStreams();
+
+        // Store response object to respond directly (JSON path only).
+        if (!useSseStream && requestId !== undefined && requestId !== null) {
           this.pendingResponses.set(requestId, res);
           res.on('close', () => {
             this.pendingResponses.delete(requestId);
@@ -431,9 +441,9 @@ export class StreamableHttpTransport implements Transport {
           }
         }
 
-        // If it does not have a request ID, we just acknowledge with 202
-        if (requestId === undefined || requestId === null) {
-          res.setHeader('Content-Type', 'application/json');
+        // For the SSE path (response delivered via an open event-stream) just
+        // acknowledge receipt. Same for notifications/requests without an id.
+        if (useSseStream || requestId === undefined || requestId === null) {
           res.status(202).send('');
         }
       }
@@ -653,6 +663,22 @@ export class StreamableHttpTransport implements Transport {
   }
 
   /**
+   * Whether there is at least one open SSE stream (session-based or sessionless)
+   * that a response could be delivered on.
+   */
+  private hasOpenStreams(): boolean {
+    for (const stream of this.activeStreams.values()) {
+      if (!stream.closed) return true;
+    }
+    for (const session of this.sessions.values()) {
+      for (const stream of session.streams.values()) {
+        if (!stream.closed) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Send message to client(s)
    */
   async send(message: JSONRPCMessage): Promise<void> {
@@ -845,7 +871,6 @@ export class StreamableHttpTransport implements Transport {
     this.app.post(path, handler);
     this.app.options(path, handler);
   }
-
 
   /**
    * Close the transport

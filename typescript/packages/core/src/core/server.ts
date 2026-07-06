@@ -13,6 +13,8 @@ import {
   ListResourceTemplatesRequestSchema,
   SubscribeRequestSchema,
   UnsubscribeRequestSchema,
+  LATEST_PROTOCOL_VERSION,
+  SUPPORTED_PROTOCOL_VERSIONS,
 } from '@modelcontextprotocol/sdk/types.js';
 import { Tool } from './tool.js';
 import { Resource, ResourceTemplate, createResource } from './resource.js';
@@ -145,7 +147,10 @@ export class NitroStackServer {
       version: '1.0.0',
     };
 
-    // Register itself in DI container
+    // Register itself in DI container so modules can inject the server.
+    // NOTE: DIContainer is a process-wide singleton, so this assumes a single
+    // NitroStackServer instance per process. Multiple instances would overwrite
+    // each other's registration here.
     DIContainer.getInstance().registerValue(NitroStackServer, this);
     DIContainer.getInstance().registerValue('NitroStackServer', this);
 
@@ -1166,9 +1171,7 @@ export class NitroStackServer {
         transport.onmessage = async (message: JsonRpcRequest) => {
           // Handle the message through the MCP server's internal handler
           try {
-            const mcpServerInternal = this.mcpServer as any;
-            const customHandlers = mcpServerInternal._requestHandlers;
-            const sdkHandlers = mcpServerInternal.server?._requestHandlers;
+            const internals = this.getMcpInternalHandlers();
 
             if (message && message.method) {
               const isRequest = message.id !== undefined && message.id !== null;
@@ -1179,7 +1182,9 @@ export class NitroStackServer {
                     jsonrpc: '2.0',
                     id: message.id!,
                     result: {
-                      protocolVersion: '2024-11-05',
+                      protocolVersion: this.negotiateProtocolVersion(
+                        (message as any).params?.protocolVersion
+                      ),
                       capabilities: NitroStackServer.mcpServerOptions.capabilities,
                       serverInfo: {
                         name: this.config.name,
@@ -1190,7 +1195,7 @@ export class NitroStackServer {
                   return;
                 }
 
-                const handler = sdkHandlers?.get(message.method) || customHandlers?.get(message.method);
+                const handler = internals.requestHandlers?.get(message.method);
                 if (handler) {
                   const extra = {
                     signal: new AbortController().signal,
@@ -1214,7 +1219,7 @@ export class NitroStackServer {
                   this.logger.warn(`[Dual Mode] No request handler found for method: ${message.method}`);
                 }
               } else {
-                const notificationHandler = mcpServerInternal.server?._notificationHandlers?.get(message.method) || customHandlers?.get(message.method);
+                const notificationHandler = internals.notificationHandlers?.get(message.method);
                 if (notificationHandler) {
                   await notificationHandler(message);
                 } else {
@@ -1496,6 +1501,59 @@ export class NitroStackServer {
    */
   getHttpTransport(): HttpTransport | undefined {
     return this._httpTransport;
+  }
+
+  /**
+   * Negotiate the MCP protocol version for the dual-mode initialize handshake.
+   * Echoes the client's requested version when we support it, otherwise falls
+   * back to the latest version advertised by the installed SDK.
+   */
+  private negotiateProtocolVersion(requested?: unknown): string {
+    if (typeof requested === 'string' && SUPPORTED_PROTOCOL_VERSIONS.includes(requested)) {
+      return requested;
+    }
+    return LATEST_PROTOCOL_VERSION;
+  }
+
+  /**
+   * Safely extract the MCP SDK's internal request/notification handler maps.
+   * These are private SDK internals used only for dual-mode message forwarding;
+   * access is isolated here so an SDK upgrade that changes the shape degrades
+   * gracefully (with a warning) instead of silently dropping every message.
+   */
+  private getMcpInternalHandlers(): {
+    requestHandlers?: Map<string, (req: JsonRpcRequest, extra: unknown) => Promise<unknown>>;
+    notificationHandlers?: Map<string, (req: JsonRpcRequest) => Promise<unknown>>;
+  } {
+    const mcpServerInternal = this.mcpServer as any;
+    const customHandlers = mcpServerInternal?._requestHandlers;
+    const sdkHandlers = mcpServerInternal?.server?._requestHandlers;
+    const notificationHandlers =
+      mcpServerInternal?.server?._notificationHandlers ?? mcpServerInternal?._notificationHandlers;
+
+    const requestHandlers = sdkHandlers ?? customHandlers;
+
+    if (!requestHandlers && !notificationHandlers) {
+      this.logger.warn(
+        '[Dual Mode] Unable to locate MCP SDK internal handler maps. ' +
+        'The @modelcontextprotocol/sdk internals may have changed; dual-mode HTTP forwarding may not work.'
+      );
+    }
+
+    // Merge SDK + custom request handlers so both surfaces remain reachable.
+    // Spread custom first then SDK so SDK handlers win on key collisions,
+    // preserving the original `sdkHandlers ?? customHandlers` precedence.
+    let mergedRequestHandlers = requestHandlers as
+      | Map<string, (req: JsonRpcRequest, extra: unknown) => Promise<unknown>>
+      | undefined;
+    if (sdkHandlers && customHandlers && sdkHandlers !== customHandlers) {
+      mergedRequestHandlers = new Map([...customHandlers, ...sdkHandlers]);
+    }
+
+    return {
+      requestHandlers: mergedRequestHandlers,
+      notificationHandlers: notificationHandlers ?? customHandlers,
+    };
   }
 }
 
