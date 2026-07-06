@@ -158,14 +158,130 @@ export class OAuthModule {
   private static discoveryInfo: OAuthDiscoveryInfo | null = null;
   private discoveryServer: DiscoveryHttpServer | null = null;
 
-  private wellKnownHandler = (req: unknown, res: { writeHead: (status: number, headers: Record<string, string>) => void; end: (data: string) => void }) => {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      issuer: this.config.issuer,
-      token_endpoint: `${this.config.authorizationServers[0]}/oauth/token`,
-      // Add other metadata as needed
-    }));
+  private wellKnownHandler = async (
+    req: unknown,
+    res: { writeHead: (status: number, headers: Record<string, string>) => void; end: (data: string) => void }
+  ) => {
+    const headers = { 
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization',
+    };
+
+    const host = (req as any).headers?.host || 'localhost:3000';
+    const registrationEndpoint = `http://${host}/oauth/v2/register`;
+
+    try {
+      const authServer = this.config.authorizationServers[0];
+      let metadata: any = null;
+
+      try {
+        const response = await fetch(`${authServer}/.well-known/openid-configuration`);
+        if (response.ok) {
+          metadata = await response.json();
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      if (!metadata) {
+        try {
+          const response = await fetch(`${authServer}/.well-known/oauth-authorization-server`);
+          if (response.ok) {
+            metadata = await response.json();
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      if (metadata) {
+        // Inject registration_endpoint to satisfy strict client schema validation (Cursor/OpenAI)
+        if (!metadata.registration_endpoint) {
+          metadata.registration_endpoint = registrationEndpoint;
+        }
+        res.writeHead(200, headers);
+        res.end(JSON.stringify(metadata));
+        return;
+      }
+    } catch (err) {
+      // ignore
+    }
+
+    // Fallback compliant with RFC 8414 / OIDC metadata schema
+    const fallbackMetadata = {
+      issuer: this.config.issuer || this.config.authorizationServers[0],
+      authorization_endpoint: `${this.config.authorizationServers[0]}/oauth/v2/authorize`,
+      token_endpoint: `${this.config.authorizationServers[0]}/oauth/v2/token`,
+      introspection_endpoint: this.config.tokenIntrospectionEndpoint || `${this.config.authorizationServers[0]}/oauth/v2/introspect`,
+      jwks_uri: this.config.jwksUri || `${this.config.authorizationServers[0]}/oauth/v2/keys`,
+      registration_endpoint: registrationEndpoint,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code', 'client_credentials', 'refresh_token'],
+      subject_types_supported: ['public'],
+      id_token_signing_alg_values_supported: ['RS256'],
+      code_challenge_methods_supported: ['S256'],
+    };
+
+    res.writeHead(200, headers);
+    res.end(JSON.stringify(fallbackMetadata));
   };
+
+  private registrationHandler = async (
+    req: any,
+    res: { writeHead: (status: number, headers: Record<string, string>) => void; end: (data: string) => void }
+  ) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization',
+    };
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200, headers);
+      res.end('');
+      return;
+    }
+
+    // Read and parse request body if not already parsed (for raw http.IncomingMessage)
+    let body: any = {};
+    if (req.body && typeof req.body === 'object') {
+      body = req.body;
+    } else {
+      try {
+        const buffers: Buffer[] = [];
+        for await (const chunk of req) {
+          buffers.push(chunk as Buffer);
+        }
+        const data = Buffer.concat(buffers).toString();
+        if (data) {
+          body = JSON.parse(data);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // Read client ID from environment or default (from flight-booking-mcp app config)
+    const clientId = process.env.ZITADEL_CLIENT_ID || '378036683838275586';
+
+    const responsePayload = {
+      client_id: clientId,
+      client_secret: process.env.ZITADEL_CLIENT_SECRET || '',
+      client_id_issued_at: Math.floor(Date.now() / 1000),
+      client_secret_expires_at: 0,
+      grant_types: body.grant_types || ['authorization_code', 'refresh_token'],
+      response_types: body.response_types || ['code'],
+      token_endpoint_auth_method: body.token_endpoint_auth_method || 'none',
+      redirect_uris: body.redirect_uris || [],
+    };
+
+    res.writeHead(200, headers);
+    res.end(JSON.stringify(responsePayload));
+  };
+
 
   private resourceMetadataHandler = (req: unknown, res: { writeHead: (status: number, headers: Record<string, string>) => void; end: (data: string) => void }) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -334,7 +450,9 @@ export class OAuthModule {
   private registerDiscoveryHandlers(server: DiscoveryHttpServer | { on: (path: string, handler: unknown) => void }) {
     server.on('/.well-known/oauth-authorization-server', this.wellKnownHandler);
     server.on('/.well-known/oauth-protected-resource', this.resourceMetadataHandler);
+    server.on('/oauth/v2/register', this.registrationHandler);
   }
+
 
   /**
    * Get the current OAuth discovery info

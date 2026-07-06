@@ -840,9 +840,12 @@ export class StreamableHttpTransport implements Transport {
    * Register additional HTTP routes
    * Allows modules (like OAuthModule) to add custom endpoints
    */
-  on(path: string, handler: (req: Request, res: Response) => void): void {
+  on(path: string, handler: (req: any, res: any) => void): void {
     this.app.get(path, handler);
+    this.app.post(path, handler);
+    this.app.options(path, handler);
   }
+
 
   /**
    * Close the transport

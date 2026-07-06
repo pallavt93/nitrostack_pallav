@@ -8,6 +8,8 @@ import { startCommand } from './commands/start.js';
 import { generate } from './commands/generate.js';
 import { upgradeCommand } from './commands/upgrade.js';
 import { installCommand } from './commands/install.js';
+import { cursorCommand } from './commands/cursor.js';
+
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
@@ -75,6 +77,18 @@ export function createProgram() {
     .option('--production', 'Install production dependencies only')
     .action(installCommand);
 
+  program
+    .command('cursor')
+    .alias('c')
+    .description('Integrate this MCP server with Cursor')
+    .option('-g, --global', 'Install globally to ~/.cursor/mcp.json')
+    .option('-l, --local', 'Install locally to .cursor/mcp.json')
+    .option('-t, --type <type>', 'Connection type: "command" or "sse"')
+    .option('-u, --url <url>', 'SSE connection URL (only for sse type)')
+    .option('-p, --port <port>', 'Port for SSE connection URL (only for sse type)')
+    .option('--force', 'Force overwrite of existing configuration')
+    .action(cursorCommand);
+
   return program;
 }
 
@@ -86,6 +100,8 @@ export { startCommand } from './commands/start.js';
 export { generate } from './commands/generate.js';
 export { upgradeCommand } from './commands/upgrade.js';
 export { installCommand } from './commands/install.js';
+export { cursorCommand } from './commands/cursor.js';
+
 
 // Run the CLI when this module is the entry point
 import { fileURLToPath } from 'url';
