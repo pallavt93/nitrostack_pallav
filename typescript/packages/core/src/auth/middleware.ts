@@ -47,6 +47,20 @@ export function createAuthMiddleware(config: McpAuthConfig): RequestHandler {
 
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // Bypass auth check for GET requests (like establishing SSE stream)
+      // and JSON-RPC discovery methods (initialize, tools/list, resources/list, prompts/list)
+      const method = req.body?.method;
+      const isDiscovery =
+        req.method === 'GET' ||
+        method === 'initialize' ||
+        method === 'tools/list' ||
+        method === 'resources/list' ||
+        method === 'prompts/list';
+
+      if (isDiscovery) {
+        return next();
+      }
+
       // 1. Extract Bearer token from Authorization header
       const authHeader = req.headers.authorization;
       const token = extractBearerToken(authHeader);

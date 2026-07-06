@@ -1174,6 +1174,22 @@ export class NitroStackServer {
               const isRequest = message.id !== undefined && message.id !== null;
 
               if (isRequest) {
+                if (message.method === 'initialize') {
+                  await transport.send({
+                    jsonrpc: '2.0',
+                    id: message.id!,
+                    result: {
+                      protocolVersion: '2024-11-05',
+                      capabilities: NitroStackServer.mcpServerOptions.capabilities,
+                      serverInfo: {
+                        name: this.config.name,
+                        version: this.config.version,
+                      }
+                    }
+                  });
+                  return;
+                }
+
                 const handler = sdkHandlers?.get(message.method) || customHandlers?.get(message.method);
                 if (handler) {
                   const extra = {
