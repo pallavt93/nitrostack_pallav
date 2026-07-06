@@ -82,9 +82,9 @@ export function createProgram() {
     .description('Integrate this MCP server with Cursor')
     .option('-g, --global', 'Install globally to ~/.cursor/mcp.json')
     .option('-l, --local', 'Install locally to .cursor/mcp.json')
-    .option('-t, --type <type>', 'Connection type: "command" or "sse"')
-    .option('-u, --url <url>', 'SSE connection URL (only for sse type)')
-    .option('-p, --port <port>', 'Port for SSE connection URL (only for sse type)')
+    .option('-t, --type <type>', 'Connection type: "command", "legacy-sse", or "streamable-http" (alias: "sse" → legacy-sse)')
+    .option('-u, --url <url>', 'HTTP connection URL (for legacy-sse or streamable-http)')
+    .option('-p, --port <port>', 'Port for default HTTP URL (for legacy-sse or streamable-http)')
     .option('--force', 'Force overwrite of existing configuration')
     .action(cursorCommand);
 

@@ -584,7 +584,8 @@ export class OAuthModule {
           // of its subpaths, so a separate `${basePath}/*` mount is redundant.
           app.use(basePath, authMiddleware);
           app.use('/sse', authMiddleware);
-          this.logger.info(`OAuthModule: Registered auth middleware on ${basePath} (and subpaths) and /sse`);
+          app.use('/mcp/messages', authMiddleware);
+          this.logger.info(`OAuthModule: Registered auth middleware on ${basePath} (and subpaths), /sse, and /mcp/messages`);
         } else if (app && !this.config.required) {
           this.logger.info('OAuthModule: auth enforcement disabled (OAUTH_REQUIRED not set); skipping auth middleware');
         }

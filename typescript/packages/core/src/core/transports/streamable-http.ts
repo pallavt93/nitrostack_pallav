@@ -31,6 +31,9 @@ import { dirname, join } from 'path';
  */
 export type McpServerFactory = () => McpServer;
 
+/** Handles legacy HTTP+SSE clients that open GET without a Streamable HTTP session id (e.g. Cursor). */
+export type LegacySseHandler = (req: Request, res: Response) => Promise<void>;
+
 export interface StreamableHttpTransportOptions {
   /**
    * Port to listen on (default: 3000)
@@ -101,6 +104,7 @@ export class StreamableHttpTransport {
   private logoBase64?: string;
   private _routesRegistered = false;
   private mcpServerFactory?: McpServerFactory;
+  private legacySseHandler?: LegacySseHandler;
   private mcpSessions: Map<string, McpSession> = new Map();
   private sessionCleanupInterval?: NodeJS.Timeout;
 
@@ -136,6 +140,14 @@ export class StreamableHttpTransport {
    */
   setMcpServerFactory(factory: McpServerFactory): void {
     this.mcpServerFactory = factory;
+  }
+
+  /**
+   * Fallback for clients that speak legacy HTTP+SSE on GET /mcp (no mcp-session-id).
+   * Streamable HTTP clients always begin with POST initialize instead.
+   */
+  setLegacySseHandler(handler: LegacySseHandler): void {
+    this.legacySseHandler = handler;
   }
 
   /**
@@ -314,6 +326,11 @@ export class StreamableHttpTransport {
             return;
           }
           session = await this.createSession();
+        } else if (req.method === 'GET' && this.legacySseHandler) {
+          // Cursor and other legacy SSE clients open GET first; Streamable HTTP
+          // always starts with POST initialize. Delegate when a handler is wired.
+          await this.legacySseHandler(req, res);
+          return;
         } else {
           res.status(400).json({
             jsonrpc: '2.0',

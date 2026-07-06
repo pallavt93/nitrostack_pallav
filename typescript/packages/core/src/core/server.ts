@@ -1,7 +1,7 @@
 import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import type { Express } from 'express';
+import type { Express, Response } from 'express';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   CallToolRequestSchema,
@@ -69,6 +69,7 @@ interface HttpTransport {
   close(): Promise<void>;
   /** Provide the factory used to build a configured MCP server per /mcp session. */
   setMcpServerFactory?(factory: () => McpServer): void;
+  setLegacySseHandler?(handler: (req: unknown, res: Response) => Promise<void>): void;
   setToolsCallback?(callback: () => Promise<unknown[]>): void;
   setServerConfig?(config: { name: string; version: string; description?: string }): void;
   /** StreamableHttpTransport exposes the Express app for extra routes (legacy SDK SSE). */
@@ -214,6 +215,44 @@ export class NitroStackServer {
    * SDK-compatible legacy HTTP+SSE: GET /sse (SSEServerTransport) and POST /mcp/messages?sessionId=.
    * Streamable HTTP stays on GET/POST /mcp.
    */
+  private async startLegacySdkSseSession(res: Response, messagesPath: string): Promise<void> {
+    try {
+      const sessionMcp = this.createConfiguredMcpServer();
+
+      const transport = new SSEServerTransport(messagesPath, res);
+      const sessionId = transport.sessionId;
+      this.legacySdkSseSessions.set(sessionId, { server: sessionMcp, transport });
+
+      let closing = false;
+      transport.onclose = async () => {
+        if (closing) {
+          return;
+        }
+        closing = true;
+        this.legacySdkSseSessions.delete(sessionId);
+        try {
+          await sessionMcp.close();
+        } catch {
+          // ignore
+        }
+      };
+
+      transport.onerror = (err) => {
+        this.logger.error('Legacy SDK SSE transport error', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      };
+
+      await sessionMcp.connect(transport as Parameters<McpServer['connect']>[0]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to start legacy SDK SSE session', { error: message });
+      if (!res.headersSent) {
+        res.status(500).end('Failed to establish SSE connection');
+      }
+    }
+  }
+
   private attachLegacySdkSseRoutes(app: Express): void {
     if (this._legacySseRoutesAttached) {
       return;
@@ -223,42 +262,8 @@ export class NitroStackServer {
     const LEGACY_SSE_PATH = '/sse';
     const LEGACY_MESSAGES_PATH = '/mcp/messages';
 
-    app.get(LEGACY_SSE_PATH, async (req, res) => {
-      try {
-        const sessionMcp = this.createConfiguredMcpServer();
-
-        const transport = new SSEServerTransport(LEGACY_MESSAGES_PATH, res);
-        const sessionId = transport.sessionId;
-        this.legacySdkSseSessions.set(sessionId, { server: sessionMcp, transport });
-
-        let closing = false;
-        transport.onclose = async () => {
-          if (closing) {
-            return;
-          }
-          closing = true;
-          this.legacySdkSseSessions.delete(sessionId);
-          try {
-            await sessionMcp.close();
-          } catch {
-            // ignore
-          }
-        };
-
-        transport.onerror = (err) => {
-          this.logger.error('Legacy SDK SSE transport error', {
-            error: err instanceof Error ? err.message : String(err),
-          });
-        };
-
-        await sessionMcp.connect(transport as Parameters<McpServer['connect']>[0]);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.error('Failed to start legacy SDK SSE session', { error: message });
-        if (!res.headersSent) {
-          res.status(500).end('Failed to establish SSE connection');
-        }
-      }
+    app.get(LEGACY_SSE_PATH, async (_req, res) => {
+      await this.startLegacySdkSseSession(res, LEGACY_MESSAGES_PATH);
     });
 
     app.post(LEGACY_MESSAGES_PATH, async (req, res) => {
@@ -292,6 +297,12 @@ export class NitroStackServer {
   private attachLegacySdkSseIfNeeded(transport: HttpTransport): void {
     if (typeof transport.getApp === 'function') {
       this.attachLegacySdkSseRoutes(transport.getApp());
+    }
+    // Cursor opens GET /mcp without mcp-session-id; fall back to legacy SSE on that path.
+    if (typeof transport.setLegacySseHandler === 'function') {
+      transport.setLegacySseHandler(async (_req, res) => {
+        await this.startLegacySdkSseSession(res, '/mcp/messages');
+      });
     }
   }
 

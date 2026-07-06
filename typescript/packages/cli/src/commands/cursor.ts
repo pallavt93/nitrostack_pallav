@@ -17,13 +17,36 @@ import {
 } from '../ui/branding.js';
 import { trackEvent, shutdownAnalytics } from '../analytics/posthog.js';
 
+type CursorConnectionType = 'command' | 'legacy-sse' | 'streamable-http';
+
 interface CursorOptions {
   global?: boolean;
   local?: boolean;
-  type?: 'command' | 'sse';
+  type?: string;
   url?: string;
   port?: string;
   force?: boolean;
+}
+
+/** Normalize CLI --type values, including the deprecated `sse` alias. */
+function normalizeConnectionType(raw?: string): CursorConnectionType | undefined {
+  if (!raw) return undefined;
+  if (raw === 'sse') return 'legacy-sse';
+  if (raw === 'command' || raw === 'legacy-sse' || raw === 'streamable-http') {
+    return raw;
+  }
+  return undefined;
+}
+
+function defaultHttpUrl(type: CursorConnectionType, port: string): string {
+  if (type === 'streamable-http') {
+    return `http://localhost:${port}/mcp`;
+  }
+  return `http://localhost:${port}/sse`;
+}
+
+function isHttpConnectionType(type: CursorConnectionType): boolean {
+  return type === 'legacy-sse' || type === 'streamable-http';
 }
 
 export async function cursorCommand(options: CursorOptions): Promise<void> {
@@ -86,7 +109,16 @@ export async function cursorCommand(options: CursorOptions): Promise<void> {
     target = answers.target;
   }
 
-  let type = options.type;
+  let type = normalizeConnectionType(options.type);
+  if (options.type && !type) {
+    console.log(createErrorBox(
+      'Invalid connection type',
+      `Unknown --type "${options.type}". Use: command, legacy-sse, or streamable-http.`
+    ));
+    await shutdownAnalytics();
+    process.exit(1);
+  }
+
   if (!type) {
     const answers = await inquirer.prompt([
       {
@@ -94,28 +126,41 @@ export async function cursorCommand(options: CursorOptions): Promise<void> {
         name: 'type',
         message: chalk.white('Choose the connection type for Cursor:'),
         choices: [
-          { name: `Command (Stdio)  ${chalk.dim('─ Starts subprocess (recommended for local dev)')}`, value: 'command' },
-          { name: `SSE (HTTP URL)   ${chalk.dim('─ Connects to a running server (recommended for production/docker)')}`, value: 'sse' },
+          { name: `Command (Stdio)          ${chalk.dim('─ Starts subprocess (recommended for local dev)')}`, value: 'command' },
+          { name: `Legacy SSE (/sse)        ${chalk.dim('─ Cursor and older HTTP clients (recommended for Cursor)')}`, value: 'legacy-sse' },
+          { name: `Streamable HTTP (/mcp)   ${chalk.dim('─ MCP Inspector and modern Streamable HTTP clients')}`, value: 'streamable-http' },
         ],
         default: 'command',
       }
     ]);
-    type = answers.type;
+    type = answers.type as CursorConnectionType;
   }
 
-  let sseUrl = options.url;
-  if (type === 'sse' && !sseUrl) {
-    const port = options.port || '3000';
-    const defaultUrl = `http://localhost:${port}/mcp`;
+  if (!type) {
+    console.log(createErrorBox('Invalid connection type', 'No connection type selected.'));
+    await shutdownAnalytics();
+    process.exit(1);
+  }
+
+  const port = options.port || '3000';
+  let httpUrl = options.url;
+  if (isHttpConnectionType(type) && !httpUrl) {
+    const defaultUrl = defaultHttpUrl(type, port);
+    const urlHint = type === 'legacy-sse'
+      ? chalk.dim('Default /sse; /mcp also works for Cursor (legacy SSE fallback on GET).')
+      : chalk.dim('For MCP Inspector and clients that use POST initialize + mcp-session-id.');
     const answers = await inquirer.prompt([
       {
         type: 'input',
         name: 'url',
-        message: chalk.white('SSE connection URL:'),
+        message: chalk.white('HTTP connection URL:'),
         default: defaultUrl,
       }
     ]);
-    sseUrl = answers.url;
+    httpUrl = answers.url;
+    if (urlHint) {
+      console.log(urlHint);
+    }
   }
 
   let configFilePath: string;
@@ -135,7 +180,7 @@ export async function cursorCommand(options: CursorOptions): Promise<void> {
     };
   } else {
     entry = {
-      url: sseUrl
+      url: httpUrl
     };
   }
 
@@ -202,7 +247,7 @@ export async function cursorCommand(options: CursorOptions): Promise<void> {
     `Connection type:   ${chalk.cyan(type)}`,
     type === 'command'
       ? `Command path:      ${chalk.dim(path.join(projectRoot, 'dist', 'index.js'))}`
-      : `SSE URL:           ${chalk.cyan(sseUrl)}`
+      : `HTTP URL:          ${chalk.cyan(httpUrl)}`
   ]));
 
   if (type === 'command') {
@@ -212,6 +257,10 @@ export async function cursorCommand(options: CursorOptions): Promise<void> {
       log('Warning: dist/index.js not found. Remember to run "npm run build" first!', 'warning');
       spacer();
     }
+  }
+
+  if (type === 'legacy-sse') {
+    log('Tip: ensure the server is running in dual or http mode before connecting from Cursor.', 'info');
   }
 
   nextSteps([
