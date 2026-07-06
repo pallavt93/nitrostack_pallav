@@ -403,14 +403,15 @@ export class StreamableHttpTransport implements Transport {
         const requestId = reqMessage.id;
 
         // Accept-based response negotiation.
-        // - Direct JSON response (default, modern Streamable HTTP behavior).
-        // - SSE stream: only when the client explicitly wants text/event-stream,
-        //   is not also willing to accept JSON, and has an open SSE stream to
-        //   deliver the response on. This preserves legacy SSE-only clients while
-        //   keeping direct-JSON for everyone else.
+        // When an SSE stream is already open we deliver the response over it,
+        // UNLESS the client asked for JSON exclusively (lists application/json and
+        // not the */* wildcard). A wildcard or absent Accept is treated as
+        // SSE-capable. This keeps legacy SSE clients working (they open a stream
+        // and expect responses there) while still returning direct JSON to pure
+        // request/response clients and to anyone with no open stream.
         const wantsSSE = accept.includes('text/event-stream');
-        const wantsJSON = accept.includes('application/json');
-        const useSseStream = wantsSSE && !wantsJSON && this.hasOpenStreams();
+        const wantsJsonOnly = accept.includes('application/json') && !accept.includes('*/*');
+        const useSseStream = (wantsSSE || !wantsJsonOnly) && this.hasOpenStreams();
 
         // Store response object to respond directly (JSON path only).
         if (!useSseStream && requestId !== undefined && requestId !== null) {
