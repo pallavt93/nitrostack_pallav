@@ -153,4 +153,61 @@ describe('Prompt', () => {
             expect(prompt.name).toBe('helper-test');
         });
     });
+
+    // Locks in the string-only prompt-message contract (PromptMessage.content: string).
+    // Structured content blocks are intentionally NOT supported; enabling them
+    // should be a deliberate change to the PromptMessage type + server mapping.
+    describe('prompt response normalization contract', () => {
+        const makePrompt = (handlerResult: unknown) =>
+            new Prompt({
+                name: 'normalize',
+                description: 'Normalization contract prompt',
+                // Cast: intentionally exercising off-contract handler return shapes.
+                handler: (async () => handlerResult) as any,
+            });
+
+        it('normalizes a single message object into a one-element array', async () => {
+            const prompt = makePrompt({ role: 'assistant', content: 'Hi' });
+
+            const result = await prompt.execute({}, mockContext);
+
+            expect(result).toEqual([{ role: 'assistant', content: 'Hi' }]);
+        });
+
+        it('preserves an array of messages', async () => {
+            const messages = [
+                { role: 'user', content: 'Q' },
+                { role: 'assistant', content: 'A' },
+            ];
+            const prompt = makePrompt(messages);
+
+            const result = await prompt.execute({}, mockContext);
+
+            expect(result).toEqual(messages);
+        });
+
+        it('normalizes null/undefined return to an empty array', async () => {
+            expect(await makePrompt(null).execute({}, mockContext)).toEqual([]);
+            expect(await makePrompt(undefined).execute({}, mockContext)).toEqual([]);
+        });
+
+        it('throws ValidationError for non-string content', async () => {
+            const prompt = makePrompt({ role: 'assistant', content: { type: 'text', text: 'nope' } });
+
+            await expect(prompt.execute({}, mockContext)).rejects.toThrow(ValidationError);
+        });
+
+        it('throws ValidationError for missing or invalid role', async () => {
+            await expect(makePrompt({ content: 'no role' }).execute({}, mockContext))
+                .rejects.toThrow(ValidationError);
+            await expect(makePrompt({ role: 'tool', content: 'bad role' }).execute({}, mockContext))
+                .rejects.toThrow(ValidationError);
+        });
+
+        it('throws ValidationError for a non-object message', async () => {
+            const prompt = makePrompt(['just a string']);
+
+            await expect(prompt.execute({}, mockContext)).rejects.toThrow(ValidationError);
+        });
+    });
 });

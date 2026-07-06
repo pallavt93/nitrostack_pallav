@@ -14,6 +14,10 @@ interface McpPrompt {
 /**
  * Prompt class provides a clean abstraction for defining and executing prompts
  */
+// Enforces the PromptMessage contract (see types.ts): role in
+// user|assistant|system and string content. Structured content blocks are not
+// supported here by design; supporting them requires changing the PromptMessage
+// type and the server-side MCP mapping together.
 function validateMessageFormat(msg: any): PromptMessage {
   if (!msg || typeof msg !== 'object') {
     throw new ValidationError('Invalid prompt message format: message must be an object');

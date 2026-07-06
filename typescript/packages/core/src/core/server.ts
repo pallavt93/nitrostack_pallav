@@ -75,6 +75,20 @@ interface HttpTransport {
   getApp?(): Express;
 }
 
+/** Optional Streamable HTTP session limits from environment variables. */
+function getStreamableHttpEnvOptions(): { maxSessions?: number; sessionTimeout?: number } {
+  const maxSessions = process.env.MCP_MAX_SESSIONS
+    ? parseInt(process.env.MCP_MAX_SESSIONS, 10)
+    : undefined;
+  const sessionTimeout = process.env.MCP_SESSION_TIMEOUT_MS
+    ? parseInt(process.env.MCP_SESSION_TIMEOUT_MS, 10)
+    : undefined;
+  return {
+    ...(maxSessions !== undefined && !Number.isNaN(maxSessions) ? { maxSessions } : {}),
+    ...(sessionTimeout !== undefined && !Number.isNaN(sessionTimeout) ? { sessionTimeout } : {}),
+  };
+}
+
 /**
  * NitroStackServer - Main server class
  */
@@ -1063,6 +1077,7 @@ export class NitroStackServer {
         endpoint: '/mcp',
         enableSessions: transportType === 'http', // Sessions ONLY in pure http mode
         enableCors: process.env.ENABLE_CORS !== 'false',
+        ...getStreamableHttpEnvOptions(),
       });
 
       // Delegate /mcp protocol handling to the official SDK transport: each
@@ -1150,6 +1165,7 @@ export class NitroStackServer {
             host: transportOptions?.host || 'localhost',
             endpoint: transportOptions?.endpoint || '/mcp',
             enableCors: transportOptions?.enableCors !== false, // Enable CORS by default for web clients
+            ...getStreamableHttpEnvOptions(),
           });
           transport.setMcpServerFactory(() => this.createConfiguredMcpServer());
           this.attachLegacySdkSseIfNeeded(transport as HttpTransport);
@@ -1179,6 +1195,7 @@ export class NitroStackServer {
             host: transportOptions?.host || 'localhost',
             endpoint: transportOptions?.endpoint || '/mcp',
             enableCors: transportOptions?.enableCors || false,
+            ...getStreamableHttpEnvOptions(),
           });
 
           // Delegate /mcp protocol handling to the official SDK transport.

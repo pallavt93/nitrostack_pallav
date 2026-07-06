@@ -54,8 +54,16 @@ export interface StreamableHttpTransportOptions {
 
   /**
    * Session timeout in ms (default: 30 minutes)
+   * Idle sessions are torn down after this period of inactivity.
    */
   sessionTimeout?: number;
+
+  /**
+   * Maximum number of concurrent MCP sessions (default: 1000).
+   * Once reached, new `initialize` requests are rejected with HTTP 429 to
+   * bound memory usage against unauthenticated session-creation floods.
+   */
+  maxSessions?: number;
 
   /**
    * Custom Express app (optional)
@@ -71,6 +79,7 @@ export interface StreamableHttpTransportOptions {
 interface McpSession {
   server: McpServer;
   transport: StreamableHTTPServerTransport;
+  lastActivity: number;
 }
 
 /**
@@ -93,6 +102,7 @@ export class StreamableHttpTransport {
   private _routesRegistered = false;
   private mcpServerFactory?: McpServerFactory;
   private mcpSessions: Map<string, McpSession> = new Map();
+  private sessionCleanupInterval?: NodeJS.Timeout;
 
   constructor(options: StreamableHttpTransportOptions = {}) {
     this.options = {
@@ -101,6 +111,7 @@ export class StreamableHttpTransport {
       endpoint: options.endpoint || '/mcp',
       enableSessions: options.enableSessions === true, // Default to false for simpler clients
       sessionTimeout: options.sessionTimeout || 30 * 60 * 1000, // 30 minutes
+      maxSessions: options.maxSessions || 1000, // Cap concurrent sessions to bound memory
       enableCors: options.enableCors !== false, // Default to true
     };
 
@@ -289,6 +300,19 @@ export class StreamableHttpTransport {
 
       if (!session) {
         if (req.method === 'POST' && this.isInitializeRequest(req.body)) {
+          // Bound memory: reject new sessions once at capacity. This defends
+          // against unauthenticated `initialize` floods exhausting memory.
+          if (this.mcpSessions.size >= this.options.maxSessions) {
+            res.status(429).json({
+              jsonrpc: '2.0',
+              error: {
+                code: -32000,
+                message: 'Too many sessions: server at capacity, retry later',
+              },
+              id: null,
+            });
+            return;
+          }
           session = await this.createSession();
         } else {
           res.status(400).json({
@@ -302,6 +326,9 @@ export class StreamableHttpTransport {
           return;
         }
       }
+
+      // Refresh activity so the idle sweeper only reaps genuinely stale sessions.
+      session.lastActivity = Date.now();
 
       // Cast around the SDK's expected node req/res types: Express augments
       // Request with nitrostack's own `auth` shape which differs from the SDK's.
@@ -329,12 +356,16 @@ export class StreamableHttpTransport {
     }
 
     const server = this.mcpServerFactory();
+    // Build the session object first so `lastActivity` is a shared, mutable
+    // reference visible to both the session map and the idle sweeper.
+    const session: McpSession = { server, transport: undefined as unknown as StreamableHTTPServerTransport, lastActivity: Date.now() };
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => uuidv4(),
       onsessioninitialized: (sid: string) => {
-        this.mcpSessions.set(sid, { server, transport });
+        this.mcpSessions.set(sid, session);
       },
     });
+    session.transport = transport;
 
     transport.onclose = () => {
       const sid = transport.sessionId;
@@ -347,7 +378,34 @@ export class StreamableHttpTransport {
     };
 
     await server.connect(transport);
-    return { server, transport };
+    return session;
+  }
+
+  /**
+   * Periodically tear down sessions that have been idle longer than
+   * `sessionTimeout`. Prevents unbounded memory growth from clients that
+   * initialize but never disconnect or send DELETE.
+   */
+  private startSessionCleanup(): void {
+    if (this.sessionCleanupInterval) {
+      return;
+    }
+    this.sessionCleanupInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [sid, session] of this.mcpSessions.entries()) {
+        if (now - session.lastActivity > this.options.sessionTimeout) {
+          this.mcpSessions.delete(sid);
+          session.transport.close().catch(() => {
+            // ignore close errors
+          });
+          session.server.close().catch(() => {
+            // ignore close errors
+          });
+        }
+      }
+    }, 60_000); // sweep once a minute
+    // Do not keep the event loop (and process) alive just for the sweeper.
+    this.sessionCleanupInterval.unref?.();
   }
 
   /**
@@ -362,6 +420,8 @@ export class StreamableHttpTransport {
       this.setupRoutes();
       this._routesRegistered = true;
     }
+
+    this.startSessionCleanup();
 
     return new Promise((resolve, reject) => {
       const errorHandler = (error: Error) => {
@@ -410,6 +470,12 @@ export class StreamableHttpTransport {
    * Close the transport: tear down all live MCP sessions and the HTTP server.
    */
   async close(): Promise<void> {
+    // Stop the idle sweeper first so it can't race with teardown.
+    if (this.sessionCleanupInterval) {
+      clearInterval(this.sessionCleanupInterval);
+      this.sessionCleanupInterval = undefined;
+    }
+
     // Close all live MCP sessions (SDK transports + their servers)
     const sessions = Array.from(this.mcpSessions.values());
     this.mcpSessions.clear();
