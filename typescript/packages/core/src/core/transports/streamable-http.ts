@@ -163,10 +163,14 @@ export class StreamableHttpTransport {
       // 2. From dist/core/transports/streamable-http.js -> ../../../../src/assets/nitrocloud.png (if in nitrostack package)
       // 3. From project root (user's project) -> src/assets/nitrocloud.png
       const possiblePaths = [
-        join(__dirname, '../../../src/assets/nitrocloud.png'), // From dist/core/transports -> src/assets
-        join(__dirname, '../../../../src/assets/nitrocloud.png'), // From dist/core/transports -> src/assets (alternative)
-        join(process.cwd(), 'src/assets/nitrocloud.png'), // User's project
-        join(process.cwd(), 'node_modules/nitrostack/src/assets/nitrocloud.png'), // From node_modules
+        join(__dirname, '../../../src/assets/logo.png'),
+        join(__dirname, '../../../src/assets/nitrocloud.png'),
+        join(__dirname, '../../../../src/assets/logo.png'),
+        join(__dirname, '../../../../src/assets/nitrocloud.png'),
+        join(process.cwd(), 'src/assets/logo.png'),
+        join(process.cwd(), 'src/assets/nitrocloud.png'),
+        join(process.cwd(), 'node_modules/nitrostack/src/assets/logo.png'),
+        join(process.cwd(), 'node_modules/nitrostack/src/assets/nitrocloud.png'),
       ];
 
       let logoPath: string | null = null;
@@ -585,453 +589,670 @@ export class StreamableHttpTransport {
     const serverDescription = this.serverConfig?.description || 'A powerful MCP server built with NitroStack';
 
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${serverName} - MCP Server Documentation</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
+    /* Premium Dark & Light Themes */
     :root {
-      --nitrocloud-primary: hsl(217, 91%, 60%);
-      --nitrocloud-primary-dark: hsl(217, 91%, 50%);
-      --nitrocloud-gradient-start: hsl(217, 91%, 60%);
-      --nitrocloud-gradient-end: hsl(221, 83%, 53%);
-      --background: hsl(0, 0%, 100%);
-      --foreground: hsl(222.2, 84%, 4.9%);
-      --primary: hsl(221.2, 83.2%, 53.3%);
-      --primary-foreground: hsl(210, 40%, 98%);
-      --secondary: hsl(210, 40%, 96.1%);
-      --muted: hsl(210, 40%, 96.1%);
-      --muted-foreground: hsl(215.4, 16.3%, 46.9%);
-      --border: hsl(214.3, 31.8%, 91.4%);
-      --radius: 0.75rem;
+      --bg-gradient: radial-gradient(circle at 10% 20%, #0f172a 0%, #020617 90%);
+      --bg-card: rgba(30, 41, 59, 0.45);
+      --bg-card-hover: rgba(30, 41, 59, 0.65);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-color-hover: rgba(99, 102, 241, 0.4);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --primary-rgb: 99, 102, 241;
+      --accent: #a855f7;
+      --success: #10b981;
+      --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
     }
+    
+    .light {
+      --bg-gradient: radial-gradient(circle at 10% 20%, #f8fafc 0%, #e2e8f0 90%);
+      --bg-card: rgba(255, 255, 255, 0.65);
+      --bg-card-hover: rgba(255, 255, 255, 0.85);
+      --border-color: rgba(15, 23, 42, 0.08);
+      --border-color-hover: rgba(79, 70, 229, 0.4);
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --primary: #4f46e5;
+      --primary-hover: #3730a3;
+      --primary-rgb: 79, 70, 229;
+      --accent: #7e22ce;
+      --success: #059669;
+    }
+
     * {
+      box-sizing: border-box;
       margin: 0;
       padding: 0;
-      box-sizing: border-box;
     }
     
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+      font-family: var(--font-sans);
+      background: var(--bg-gradient);
+      color: var(--text-main);
       min-height: 100vh;
-      padding: 2rem;
-      color: var(--foreground);
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 3rem 1.5rem;
+      transition: background 0.3s, color 0.3s;
     }
     
-    .container {
-      max-width: 1280px;
-      margin: 0 auto;
-      background: var(--background);
+    .wrapper {
+      width: 100%;
+      max-width: 960px;
+    }
+    
+    /* Top Controls */
+    .controls {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 1.5rem;
+    }
+    
+    .btn-toggle {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 0.5rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      backdrop-filter: blur(12px);
+      transition: all 0.2s;
+    }
+    .btn-toggle:hover {
+      border-color: var(--primary);
+      box-shadow: 0 0 12px rgba(var(--primary-rgb), 0.15);
+    }
+    
+    /* Premium Header */
+    header {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
       border-radius: 24px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-      overflow: hidden;
-    }
-    
-    .header {
-      background: linear-gradient(135deg, var(--nitrocloud-gradient-start) 0%, var(--nitrocloud-gradient-end) 100%);
-      color: white;
-      padding: 4rem 2rem;
+      padding: 3rem 2rem;
+      margin-bottom: 2rem;
+      backdrop-filter: blur(16px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       text-align: center;
       position: relative;
       overflow: hidden;
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
     }
     
-    .header::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, transparent 100%);
-      pointer-events: none;
-    }
-    
-    .header > * {
-      position: relative;
-      z-index: 1;
-    }
-    
-    .logo-container {
-      margin-bottom: 2rem;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    
-    .logo {
-      height: 80px;
-      width: auto;
-      max-width: 200px;
-      object-fit: contain;
-      filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
-      transition: transform 0.3s ease;
-    }
-    
-    .logo:hover {
-      transform: scale(1.05);
-    }
-    
-    .header h1 {
-      font-size: 3rem;
-      font-weight: 700;
-      margin-bottom: 0.5rem;
-      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-      letter-spacing: -0.025em;
-    }
-    
-    .header .version {
-      font-size: 1rem;
-      opacity: 0.95;
-      font-weight: 400;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
-    
-    .header .description {
-      margin-top: 1rem;
-      font-size: 1.125rem;
-      opacity: 0.95;
-      font-weight: 400;
-      max-width: 600px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-    
-    .content {
-      padding: 3rem 2rem;
-    }
-    
-    .section {
-      margin-bottom: 4rem;
-    }
-    
-    .section:last-child {
-      margin-bottom: 0;
-    }
-    
-    .section h2 {
-      font-size: 2rem;
-      font-weight: 700;
-      color: var(--foreground);
-      margin-bottom: 1.5rem;
-      padding-bottom: 0.75rem;
-      border-bottom: 3px solid var(--nitrocloud-primary);
-      letter-spacing: -0.02em;
-    }
-    
-    .connection-info {
-      background: linear-gradient(to right, var(--secondary) 0%, var(--muted) 100%);
-      border-left: 4px solid var(--nitrocloud-primary);
-      padding: 2rem;
-      border-radius: var(--radius);
-      margin-bottom: 2rem;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-    }
-    
-    .connection-info p {
-      font-weight: 600;
-      color: var(--foreground);
-      margin-bottom: 0.75rem;
-      font-size: 0.9375rem;
-    }
-    
-    .connection-info code {
-      background: hsl(222.2, 84%, 4.9%);
-      color: hsl(142, 76%, 36%);
-      padding: 1rem 1.25rem;
-      border-radius: 8px;
-      font-family: 'Monaco', 'Courier New', 'Menlo', monospace;
-      display: block;
-      margin-top: 0.75rem;
-      word-break: break-all;
-      font-size: 0.875rem;
-      line-height: 1.6;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-    
-    .connection-info .description {
-      margin-top: 1rem;
-      color: var(--muted-foreground);
-      font-size: 0.9375rem;
-      line-height: 1.6;
-    }
-    
-    .tools-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 1.5rem;
-      margin-top: 1.5rem;
-    }
-    
-    .tool-card {
-      background: var(--background);
-      border: 2px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.75rem;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      position: relative;
-      overflow: hidden;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-    }
-    
-    .tool-card:hover {
-      border-color: var(--nitrocloud-primary);
-      box-shadow: 0 8px 24px rgba(59, 159, 255, 0.15);
-      transform: translateY(-4px);
-    }
-    
-    .tool-card::before {
+    header::before {
       content: '';
       position: absolute;
       top: 0;
       left: 0;
       right: 0;
       height: 4px;
-      background: linear-gradient(90deg, var(--nitrocloud-gradient-start), var(--nitrocloud-gradient-end));
+      background: linear-gradient(90deg, var(--primary), var(--accent));
     }
     
-    .tool-name {
-      font-size: 1.25rem;
+    .logo-container {
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 20px;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      border: 1px solid var(--border-color);
+      display: inline-flex;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+    }
+    
+    .logo {
+      height: 56px;
+      width: auto;
+      object-fit: contain;
+    }
+    
+    .title {
+      font-size: 2.5rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.5rem;
+      line-height: 1.2;
+    }
+    
+    .version-badge {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
       font-weight: 600;
-      color: var(--foreground);
-      margin-bottom: 0.75rem;
+      background: rgba(var(--primary-rgb), 0.1);
+      color: var(--primary);
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      border: 1px solid rgba(var(--primary-rgb), 0.2);
+      margin-bottom: 1.25rem;
+    }
+    
+    .description {
+      font-size: 1.05rem;
+      color: var(--text-muted);
+      max-width: 600px;
+      line-height: 1.6;
+    }
+    
+    /* Connection Panel with Tabs */
+    .connection-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 24px;
+      padding: 2.25rem;
+      margin-bottom: 2rem;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+    }
+    
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 1.25rem;
       display: flex;
       align-items: center;
       gap: 0.5rem;
-      letter-spacing: -0.01em;
     }
     
-    .tool-name::before {
-      content: '⚡';
-      font-size: 1.25rem;
-      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+    .tab-header {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      gap: 1.25rem;
+      margin-bottom: 1.5rem;
     }
     
-    .tool-description {
-      color: var(--muted-foreground);
-      margin-bottom: 1rem;
-      line-height: 1.625;
-      font-size: 0.9375rem;
-    }
-    
-    .tool-schema {
-      background: var(--secondary);
-      border-radius: 8px;
-      padding: 1rem;
-      margin-top: 1rem;
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.75rem 0.25rem;
+      font-family: var(--font-sans);
       font-size: 0.875rem;
-      border: 1px solid var(--border);
-    }
-    
-    .tool-schema summary {
-      cursor: pointer;
       font-weight: 600;
-      color: var(--nitrocloud-primary);
-      margin-bottom: 0.5rem;
-      user-select: none;
+      cursor: pointer;
+      position: relative;
       transition: color 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .tab-btn:hover {
+      color: var(--text-main);
+    }
+    .tab-btn.active {
+      color: var(--primary);
+    }
+    .tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--primary);
     }
     
-    .tool-schema summary:hover {
-      color: var(--nitrocloud-primary-dark);
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
     }
     
-    .tool-schema pre {
-      background: hsl(222.2, 84%, 4.9%);
-      color: hsl(142, 76%, 36%);
-      padding: 1rem;
-      border-radius: 6px;
+    .code-container {
+      background: #020617;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 1.25rem;
+      position: relative;
       overflow-x: auto;
       margin-top: 0.75rem;
-      font-size: 0.8125rem;
-      line-height: 1.6;
-      font-family: 'Monaco', 'Courier New', 'Menlo', monospace;
+    }
+    .code-container pre {
+      font-family: var(--font-mono);
+      font-size: 0.825rem;
+      color: #93c5fd;
+      line-height: 1.5;
     }
     
+    .btn-copy {
+      position: absolute;
+      top: 0.75rem;
+      right: 0.75rem;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #e2e8f0;
+      padding: 0.35rem 0.7rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      transition: all 0.2s;
+    }
+    .btn-copy:hover {
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+    }
+    
+    /* Search Box */
+    .search-container {
+      position: relative;
+      margin-bottom: 1.5rem;
+    }
+    .search-input {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1rem 1.25rem 1rem 3.25rem;
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 0.95rem;
+      transition: all 0.2s;
+      outline: none;
+    }
+    .search-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.15);
+    }
+    .search-icon {
+      position: absolute;
+      left: 1.25rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+      width: 1.25rem;
+      height: 1.25rem;
+    }
+    
+    /* Tools Grid */
+    .tools-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 4rem;
+    }
+    .tool-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 1.5rem;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+    }
+    .tool-card:hover {
+      border-color: var(--border-color-hover);
+      box-shadow: 0 12px 30px rgba(var(--primary-rgb), 0.08);
+      transform: translateY(-4px);
+    }
+    .tool-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 0.75rem;
+      gap: 0.5rem;
+    }
+    .tool-name {
+      font-weight: 700;
+      font-size: 1.1rem;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .tool-description {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+      flex-grow: 1;
+      margin-bottom: 1.5rem;
+    }
     .badge {
       display: inline-flex;
       align-items: center;
-      padding: 0.375rem 0.75rem;
-      border-radius: 12px;
-      font-size: 0.75rem;
+      font-size: 0.65rem;
+      font-weight: 800;
+      padding: 0.25rem 0.5rem;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge.widget {
+      background: rgba(168, 85, 247, 0.1);
+      color: var(--accent);
+      border: 1px solid rgba(168, 85, 247, 0.2);
+    }
+    
+    .schema-toggle {
+      background: rgba(var(--primary-rgb), 0.05);
+      border: 1px solid rgba(var(--primary-rgb), 0.1);
+      color: var(--primary);
+      padding: 0.55rem 1rem;
+      font-family: var(--font-sans);
+      font-size: 0.8rem;
       font-weight: 600;
-      margin-top: 0.5rem;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
       transition: all 0.2s;
     }
-    
-    .badge.widget {
-      background: linear-gradient(135deg, hsl(271, 81%, 56%) 0%, hsl(271, 81%, 46%) 100%);
-      color: white;
-      box-shadow: 0 2px 8px rgba(196, 132, 252, 0.3);
+    .schema-toggle:hover {
+      background: rgba(var(--primary-rgb), 0.1);
+      border-color: var(--primary);
     }
     
-    .empty-state {
+    .schema-content {
+      display: none;
+      margin-top: 1rem;
+      border-top: 1px solid var(--border-color);
+      padding-top: 1rem;
+    }
+    .schema-content.active {
+      display: block;
+      animation: slideDown 0.2s ease-out;
+    }
+    
+    .schema-content pre {
+      background: #020617;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 1rem;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.775rem;
+      color: #38bdf8;
+      line-height: 1.5;
+    }
+    
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Footer */
+    footer {
       text-align: center;
-      padding: 4rem 2rem;
-      color: var(--muted-foreground);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-top: auto;
+      padding: 2.5rem 0;
+      border-top: 1px solid var(--border-color);
+      width: 100%;
     }
-    
-    .empty-state svg {
-      width: 64px;
-      height: 64px;
-      margin: 0 auto 1.5rem;
-      opacity: 0.5;
-      color: var(--muted-foreground);
-    }
-    
-    .empty-state p {
-      font-size: 1rem;
-      font-weight: 500;
-    }
-    
-    .footer {
-      background: linear-gradient(to right, var(--secondary) 0%, var(--muted) 100%);
-      padding: 2.5rem 2rem;
-      text-align: center;
-      color: var(--muted-foreground);
-      border-top: 1px solid var(--border);
-    }
-    
-    .footer p {
-      font-size: 0.9375rem;
-      line-height: 1.6;
-    }
-    
-    .footer a {
-      color: var(--nitrocloud-primary);
+    footer a {
+      color: var(--primary);
       text-decoration: none;
       font-weight: 600;
-      transition: color 0.2s;
     }
-    
-    .footer a:hover {
-      color: var(--nitrocloud-primary-dark);
+    footer a:hover {
       text-decoration: underline;
-    }
-    
-    @media (max-width: 768px) {
-      body {
-        padding: 1rem;
-      }
-      
-      .header {
-        padding: 3rem 1.5rem;
-      }
-      
-      .header h1 {
-        font-size: 2.25rem;
-      }
-      
-      .content {
-        padding: 2rem 1.5rem;
-      }
-      
-      .section h2 {
-        font-size: 1.75rem;
-      }
-      
-      .tools-grid {
-        grid-template-columns: 1fr;
-      }
-      
-      .connection-info {
-        padding: 1.5rem;
-      }
-    }
-    
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --background: hsl(222.2, 84%, 4.9%);
-        --foreground: hsl(210, 40%, 98%);
-        --primary: hsl(217, 91%, 60%);
-        --secondary: hsl(217.2, 32.6%, 17.5%);
-        --muted: hsl(217.2, 32.6%, 17.5%);
-        --muted-foreground: hsl(215, 20.2%, 65.1%);
-        --border: hsl(217.2, 32.6%, 17.5%);
-      }
-      
-      .connection-info code {
-        background: hsl(217.2, 32.6%, 17.5%);
-        color: hsl(142, 76%, 56%);
-      }
-      
-      .tool-schema pre {
-        background: hsl(217.2, 32.6%, 17.5%);
-        color: hsl(142, 76%, 56%);
-      }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
+  <div class="wrapper">
+    <div class="controls">
+      <button class="btn-toggle" onclick="toggleTheme()" id="theme-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:1.15rem;height:1.15rem;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
+        </svg>
+        <span>Toggle Theme</span>
+      </button>
+    </div>
+
+    <header>
       ${this.logoBase64 ? `
       <div class="logo-container">
-        <img src="data:image/png;base64,${this.logoBase64}" alt="NitroCloud Logo" class="logo">
+        <img src="data:image/png;base64,${this.logoBase64}" alt="Logo" class="logo">
       </div>
       ` : ''}
-      <h1>${serverName}</h1>
-      <div class="version">v${serverVersion}</div>
-      <div class="description">${serverDescription}</div>
-    </div>
-    
-    <div class="content">
-      <div class="section">
-        <h2>🔌 Connection Information</h2>
-        <div class="connection-info">
-          <p>MCP Endpoint</p>
-          <code>${mcpEndpoint}</code>
-          <p class="description">
-            Connect to this MCP server using the endpoint above. The server supports Server-Sent Events (SSE) for real-time bidirectional communication following the Model Context Protocol specification.
-          </p>
+      <h1 class="title">${serverName}</h1>
+      <span class="version-badge">v${serverVersion}</span>
+      <p class="description">${serverDescription}</p>
+    </header>
+
+    <div class="connection-panel">
+      <div class="section-title">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:1.25rem;height:1.25rem;color:var(--primary);">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z" />
+        </svg>
+        <span>Connection Setup</span>
+      </div>
+
+      <div class="tab-header">
+        <button class="tab-btn active" onclick="switchTab('cursor')">
+          <svg fill="none" height="14" viewBox="0 0 545 545" width="14" xmlns="http://www.w3.org/2000/svg" style="color: currentColor;"><g fill="currentColor"><path d="m466.383 137.073-206.469-119.2034c-6.63-3.8287-14.811-3.8287-21.441 0l-206.4586 119.2034c-5.5734 3.218-9.0144 9.169-9.0144 15.615v240.375c0 6.436 3.441 12.397 9.0144 15.615l206.4686 119.203c6.63 3.829 14.811 3.829 21.441 0l206.468-119.203c5.574-3.218 9.015-9.17 9.015-15.615v-240.375c0-6.436-3.441-12.397-9.015-15.615zm-12.969 25.25-199.316 345.223c-1.347 2.326-4.904 1.376-4.904-1.319v-226.048c0-4.517-2.414-8.695-6.33-10.963l-195.7577-113.019c-2.3263-1.347-1.3764-4.905 1.3182-4.905h398.6305c5.661 0 9.199 6.136 6.368 11.041h-.009z"></path></g></svg>
+          <span>Cursor</span>
+        </button>
+        <button class="tab-btn" onclick="switchTab('claude')">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" role="img" aria-label="Claude Logo"><path d="M11.376 24L10.776 23.544L10.44 22.8L10.776 21.312L11.16 19.392L11.472 17.856L11.76 15.96L11.928 15.336L11.904 15.288L11.784 15.312L10.344 17.28L8.16 20.232L6.432 22.056L6.024 22.224L5.304 21.864L5.376 21.192L5.784 20.616L8.16 17.568L9.6 15.672L10.536 14.592L10.512 14.448H10.464L4.128 18.576L3 18.72L2.496 18.264L2.568 17.52L2.808 17.28L4.704 15.96L9.432 13.32L9.504 13.08L9.432 12.96H9.192L8.4 12.912L5.712 12.84L3.384 12.744L1.104 12.624L0.528 12.504L0 11.784L0.048 11.424L0.528 11.112L1.224 11.16L2.736 11.28L5.016 11.424L6.672 11.52L9.12 11.784H9.504L9.552 11.616L9.432 11.52L9.336 11.424L6.96 9.84L4.416 8.16L3.072 7.176L2.352 6.672L1.992 6.216L1.848 5.208L2.496 4.488L3.384 4.56L3.6 4.608L4.488 5.304L6.384 6.768L8.88 8.616L9.24 8.904L9.408 8.808V8.736L9.24 8.472L7.896 6.024L6.456 3.528L5.808 2.496L5.64 1.872C5.576 1.656 5.544 1.416 5.544 1.152L6.288 0.144001L6.696 0L7.704 0.144001L8.112 0.504001L8.736 1.92L9.72 4.152L11.28 7.176L11.736 8.088L11.976 8.904L12.072 9.168H12.24V9.024L12.36 7.296L12.6 5.208L12.84 2.52L12.912 1.752L13.296 0.840001L14.04 0.360001L14.616 0.624001L15.096 1.32L15.024 1.752L14.76 3.6L14.184 6.504L13.824 8.472H14.04L14.28 8.208L15.264 6.912L16.92 4.848L17.64 4.032L18.504 3.12L19.056 2.688H20.088L20.832 3.816L20.496 4.992L19.44 6.336L18.552 7.464L17.28 9.168L16.512 10.536L16.584 10.632H16.752L19.608 10.008L21.168 9.744L22.992 9.432L23.832 9.816L23.928 10.2L23.592 11.016L21.624 11.496L19.32 11.952L15.888 12.768L15.84 12.792L15.888 12.864L17.424 13.008L18.096 13.056H19.728L22.752 13.272L23.544 13.8L24 14.424L23.928 14.928L22.704 15.528L21.072 15.144L17.232 14.232L15.936 13.92H15.744V14.016L16.848 15.096L18.84 16.896L21.36 19.224L21.48 19.8L21.168 20.28L20.832 20.232L18.624 18.552L17.76 17.808L15.84 16.2H15.72V16.368L16.152 17.016L18.504 20.544L18.624 21.624L18.456 21.96L17.832 22.176L17.184 22.056L15.792 20.136L14.376 17.952L13.224 16.008L13.104 16.104L12.408 23.352L12.096 23.712L11.376 24Z" fill="var(--cds-clay, #d97757)"/></svg>
+          <span>Claude Desktop</span>
+        </button>
+        <button class="tab-btn" onclick="switchTab('antigravity')">
+          <svg xmlns="http://www.w3.org/2000/svg" height="14" viewBox="0 0 24 24" width="14" style="flex:none;line-height:1;color:currentColor;"><title>Antigravity</title><mask height="23" id="lobe-icons-antigravity-0-_R_0_" maskUnits="userSpaceOnUse" width="24" x="0" y="1"><path d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z" fill="#fff"/></mask><g mask="url(#lobe-icons-antigravity-0-_R_0_)"><g filter="url(#lobe-icons-antigravity-1-_R_0_)"><path d="M-1.018-3.992c-.408 3.591 2.686 6.89 6.91 7.37 4.225.48 7.98-2.043 8.387-5.633.408-3.59-2.686-6.89-6.91-7.37-4.225-.479-7.98 2.043-8.387 5.633z" fill="#FFE432"/></g><g filter="url(#lobe-icons-antigravity-2-_R_0_)"><path d="M15.269 7.747c1.058 4.557 5.691 7.374 10.348 6.293 4.657-1.082 7.575-5.653 6.516-10.21-1.058-4.556-5.691-7.374-10.348-6.292-4.657 1.082-7.575 5.653-6.516 10.21z" fill="#FC413D"/></g><g filter="url(#lobe-icons-antigravity-3-_R_0_)"><path d="M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z" fill="#00B95C"/></g><g filter="url(#lobe-icons-antigravity-4-_R_0_)"><path d="M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z" fill="#00B95C"/></g><g filter="url(#lobe-icons-antigravity-5-_R_0_)"><path d="M-7.608 14.703c3.352 3.424 9.126 3.208 12.896-.483 3.77-3.69 4.108-9.459.756-12.883C2.69-2.087-3.083-1.871-6.853 1.82c-3.77 3.69-4.108 9.458-.755 12.883z" fill="#00B95C"/></g><g filter="url(#lobe-icons-antigravity-6-_R_0_)"><path d="M9.932 27.617c1.04 4.482 5.384 7.303 9.7 6.3 4.316-1.002 6.971-5.448 5.93-9.93-1.04-4.483-5.384-7.304-9.7-6.301-4.316 1.002-6.971 5.448-5.93 9.93z" fill="#3186FF"/></g><g filter="url(#lobe-icons-antigravity-7-_R_0_)"><path d="M2.572-8.185C.392-3.329 2.778 2.472 7.9 4.771c5.122 2.3 11.042.227 13.222-4.63 2.18-4.855-.205-10.656-5.327-12.955-5.122-2.3-11.042-.227-13.222 4.63z" fill="#FBBC04"/></g><g filter="url(#lobe-icons-antigravity-8-_R_0_)"><path d="M-3.267 38.686c-5.277-2.072 3.742-19.117 5.984-24.83 2.243-5.712 8.34-8.664 13.616-6.592 5.278 2.071 11.533 13.482 9.29 19.195-2.242 5.713-23.613 14.298-28.89 12.227z" fill="#3186FF"/></g><g filter="url(#lobe-icons-antigravity-9-_R_0_)"><path d="M28.71 17.471c-1.413 1.649-5.1.808-8.236-1.878-3.135-2.687-4.531-6.201-3.118-7.85 1.412-1.649 5.1-.808 8.235 1.878s4.532 6.2 3.119 7.85z" fill="#749BFF"/></g><g filter="url(#lobe-icons-antigravity-10-_R_0_)"><path d="M18.163 9.077c5.81 3.93 12.502 4.19 14.946.577 2.443-3.612-.287-9.727-6.098-13.658-5.81-3.931-12.502-4.19-14.946-.577-2.443 3.612.287 9.727 6.098 13.658z" fill="#FC413D"/></g><g filter="url(#lobe-icons-antigravity-11-_R_0_)"><path d="M-.915 2.684c-1.44 3.473-.97 6.967 1.05 7.804 2.02.837 4.824-1.3 6.264-4.772 1.44-3.473.97-6.967-1.05-7.804-2.02-.837-4.824 1.3-6.264 4.772z" fill="#FFEE48"/></g></g><defs><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="17.587" id="lobe-icons-antigravity-1-_R_0_" width="19.838" x="-3.288" y="-11.917"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="1.117"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="38.565" id="lobe-icons-antigravity-2-_R_0_" width="38.9" x="4.251" y="-13.493"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="5.4"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="36.517" id="lobe-icons-antigravity-3-_R_0_" width="40.955" x="-21.889" y="-10.592"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.591"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="36.517" id="lobe-icons-antigravity-4-_R_0_" width="40.955" x="-21.889" y="-10.592"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.591"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="36.595" id="lobe-icons-antigravity-5-_R_0_" width="36.632" x="-19.099" y="-10.278"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.591"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="34.087" id="lobe-icons-antigravity-6-_R_0_" width="33.533" x=".981" y="8.758"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.363"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="35.276" id="lobe-icons-antigravity-7-_R_0_" width="35.978" x="-6.143" y="-21.659"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.954"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="46.523" id="lobe-icons-antigravity-8-_R_0_" width="45.114" x="-11.96" y="-.46"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.531"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="24.054" id="lobe-icons-antigravity-9-_R_0_" width="25.094" x="10.485" y=".58"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.159"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="30.007" id="lobe-icons-antigravity-10-_R_0_" width="33.508" x="5.833" y="-12.467"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="2.669"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="26.151" id="lobe-icons-antigravity-11-_R_0_" width="22.194" x="-8.355" y="-8.876"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.303"/></filter></defs></svg>
+          <span>Antigravity</span>
+        </button>
+        <button class="tab-btn" onclick="switchTab('sse')">Raw SSE</button>
+      </div>
+
+      <!-- Cursor Connection Tab -->
+      <div class="tab-content active" id="tab-cursor">
+        <p style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-muted);">
+          To add this server to Cursor, go to <strong>Settings > Features > MCP</strong> and configure a new <strong>MCP</strong> server:
+        </p>
+        <div class="code-container">
+          <button class="btn-copy" onclick="copyText('cursor-config')">Copy Config</button>
+          <pre id="cursor-config">Name: ${serverName}
+Type: SSE
+URL: ${mcpEndpoint}</pre>
         </div>
       </div>
-      
-      <div class="section">
-        <h2>🛠️ Available Tools</h2>
-        ${tools.length > 0 ? `
-          <div class="tools-grid">
-            ${tools.map(tool => `
-              <div class="tool-card">
-                <div class="tool-name">${this.escapeHtml(tool.name)}</div>
-                <div class="tool-description">${this.escapeHtml(tool.description || 'No description available')}</div>
-                ${(tool as any).widget || (tool as any).outputTemplate || tool._meta?.['openai/outputTemplate'] ? `
-                  <span class="badge widget">🎨 Has UI Widget</span>
-                ` : ''}
-                ${tool.inputSchema ? `
-                  <details class="tool-schema">
-                    <summary>Input Schema</summary>
-                    <pre>${this.escapeHtml(JSON.stringify(tool.inputSchema, null, 2))}</pre>
-                  </details>
-                ` : ''}
-              </div>
-            `).join('')}
-          </div>
-        ` : `
-          <div class="empty-state">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p>No tools are currently registered on this server.</p>
-          </div>
-        `}
+
+      <!-- Claude Connection Tab -->
+      <div class="tab-content" id="tab-claude">
+        <p style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-muted);">
+          Add the following configuration block under <code>mcpServers</code> in your Claude Desktop configuration file:
+        </p>
+        <div class="code-container">
+          <button class="btn-copy" onclick="copyText('claude-config')">Copy JSON</button>
+          <pre id="claude-config">"${serverName.toLowerCase().replace(/\s+/g, '-')}": {
+  "command": "npx",
+  "args": ["-y", "@nitrostack/cli", "connect", "${mcpEndpoint}"]
+}</pre>
+        </div>
+      </div>
+
+      <!-- Antigravity Connection Tab -->
+      <div class="tab-content" id="tab-antigravity">
+        <p style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-muted);">
+          To add this server to Antigravity config, configure a new <strong>SSE</strong> server:
+        </p>
+        <div class="code-container">
+          <button class="btn-copy" onclick="copyText('antigravity-config')">Copy Config</button>
+          <pre id="antigravity-config">Name: ${serverName}
+Type: SSE
+URL: ${mcpEndpoint}</pre>
+        </div>
+      </div>
+
+      <!-- Raw SSE Tab -->
+      <div class="tab-content" id="tab-sse">
+        <p style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-muted);">
+          Connect directly using the Server-Sent Events endpoint:
+        </p>
+        <div class="code-container">
+          <button class="btn-copy" onclick="copyText('sse-endpoint')">Copy Endpoint</button>
+          <pre id="sse-endpoint">${mcpEndpoint}</pre>
+        </div>
       </div>
     </div>
-    
-    <div class="footer">
-      <p>Built with <a href="https://nitrostack.ai" target="_blank" rel="noopener noreferrer">NitroStack</a> - The TypeScript MCP Framework</p>
-      <p style="margin-top: 0.5rem; font-size: 0.875rem;">Model Context Protocol Server</p>
+
+    <div class="section-title">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:1.25rem;height:1.25rem;color:var(--primary);">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.67 2.67 0 1 1 13.5 17.25l-5.83-5.83m0 0a2.67 2.67 0 1 1-3.75-3.75 2.67 2.67 0 0 1 3.75 3.75Zm5.83 5.83V12m0 0h5.25m-5.25 0V6.75" />
+      </svg>
+      <span>Available Tools</span>
     </div>
+
+    <div class="search-container">
+      <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+      <input type="text" class="search-input" id="search" placeholder="Search tools by name or description..." oninput="filterTools()">
+    </div>
+
+    ${tools.length > 0 ? `
+      <div class="tools-grid" id="tools-container">
+        ${tools.map((tool, idx) => {
+      const hasWidget = (tool as any).widget || (tool as any).outputTemplate || tool._meta?.['openai/outputTemplate'];
+      return `
+            <div class="tool-card" data-name="${this.escapeHtml(tool.name).toLowerCase()}" data-desc="${this.escapeHtml(tool.description || '').toLowerCase()}">
+              <div class="tool-header">
+                <div class="tool-name-container">
+                  <span class="tool-icon">⚡</span>
+                  <span class="tool-name">${this.escapeHtml(tool.name)}</span>
+                </div>
+                ${hasWidget ? `
+                  <span class="badge widget">🎨 Widget UI</span>
+                ` : ''}
+              </div>
+              <p class="tool-description">${this.escapeHtml(tool.description || 'No description available')}</p>
+              ${tool.inputSchema ? `
+                <button class="schema-toggle" onclick="toggleSchema(${idx})">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:0.9rem;height:0.9rem;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" />
+                  </svg>
+                  <span>View Input Schema</span>
+                </button>
+                <div class="schema-content" id="schema-${idx}">
+                  <pre>${this.escapeHtml(JSON.stringify(tool.inputSchema, null, 2))}</pre>
+                </div>
+              ` : ''}
+            </div>
+          `;
+    }).join('')}
+      </div>
+    ` : `
+      <div class="empty-state">
+        <p>No tools are currently registered on this server.</p>
+      </div>
+    `}
+
+    <footer>
+      <p>Powered by <a href="https://nitrostack.ai" target="_blank" rel="noopener noreferrer">NitroStack</a> - The TypeScript MCP Framework</p>
+    </footer>
   </div>
+
+  <script>
+    // Theme Toggle State
+    function toggleTheme() {
+      const html = document.documentElement;
+      if (html.classList.contains('light')) {
+        html.classList.remove('light');
+        html.classList.add('dark');
+        localStorage.setItem('theme', 'dark');
+      } else {
+        html.classList.remove('dark');
+        html.classList.add('light');
+        localStorage.setItem('theme', 'light');
+      }
+    }
+    
+    // Set Initial Theme
+    (function() {
+      const savedTheme = localStorage.getItem('theme') || 'dark';
+      document.documentElement.className = savedTheme;
+    })();
+
+    // Tab Switching
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+      
+      const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.textContent.toLowerCase().includes(tabId));
+      if (activeBtn) activeBtn.classList.add('active');
+      
+      const activeContent = document.getElementById('tab-' + tabId);
+      if (activeContent) activeContent.classList.add('active');
+    }
+
+    // Copy to Clipboard
+    function copyText(elementId) {
+      const text = document.getElementById(elementId).innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector('#' + elementId).parentNode.querySelector('.btn-copy');
+        const originalText = btn.innerText;
+        btn.innerText = 'Copied!';
+        btn.style.background = 'rgba(16, 185, 129, 0.2)';
+        btn.style.borderColor = '#10b981';
+        setTimeout(() => {
+          btn.innerText = originalText;
+          btn.style.background = '';
+          btn.style.borderColor = '';
+        }, 1500);
+      });
+    }
+
+    // Toggle Schema Visibility
+    function toggleSchema(index) {
+      const content = document.getElementById('schema-' + index);
+      const button = content.previousElementSibling;
+      const span = button.querySelector('span');
+      
+      if (content.classList.contains('active')) {
+        content.classList.remove('active');
+        span.innerText = 'View Input Schema';
+      } else {
+        content.classList.add('active');
+        span.innerText = 'Hide Input Schema';
+      }
+    }
+
+    // Client-side filtering of tools
+    function filterTools() {
+      const query = document.getElementById('search').value.toLowerCase();
+      const cards = document.querySelectorAll('.tool-card');
+      
+      cards.forEach(card => {
+        const name = card.getAttribute('data-name');
+        const desc = card.getAttribute('data-desc');
+        if (name.includes(query) || desc.includes(query)) {
+          card.style.display = 'flex';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+  </script>
 </body>
 </html>`;
   }
