@@ -1056,6 +1056,200 @@ export class StreamableHttpTransport {
     footer a:hover {
       text-decoration: underline;
     }
+
+    /* Claude Custom Connector Mockup Styles */
+    .claude-dialog-container {
+      background-color: #201f1d;
+      border: 1px solid #2d2c29;
+      border-radius: 12px;
+      padding: 24px;
+      width: 100%;
+      max-width: 500px;
+      color: #e3e2e0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      margin: 1.5rem auto;
+      position: relative;
+    }
+
+    .claude-dialog-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .claude-dialog-title-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .claude-dialog-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #f5f4f2;
+    }
+
+    .claude-beta-badge {
+      background-color: #383733;
+      color: #8c8a84;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .claude-close-btn {
+      color: #8c8a84;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      transition: background-color 0.2s;
+    }
+
+    .claude-close-btn:hover {
+      background-color: #2d2c29;
+      color: #f5f4f2;
+    }
+
+    .claude-dialog-desc {
+      font-size: 13.5px;
+      line-height: 1.5;
+      color: #9b9993;
+      margin-bottom: 20px;
+    }
+
+    .claude-dialog-desc a {
+      color: #58a6ff;
+      text-decoration: underline;
+    }
+
+    .claude-input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .claude-input-wrapper {
+      position: relative;
+      width: 100%;
+    }
+
+    .claude-input {
+      width: 100%;
+      background-color: #2c2b27;
+      border: 1px solid #3c3b37;
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #f5f4f2;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .claude-input::placeholder {
+      color: #706e67;
+    }
+
+    .claude-input:focus-within, .claude-input.active-input {
+      border-color: #3890ff;
+      box-shadow: 0 0 0 1px #3890ff;
+    }
+
+    .claude-input-wrapper .btn-copy-input {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #e3e2e0;
+      padding: 4px 8px;
+      font-size: 11px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .claude-input-wrapper .btn-copy-input:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .claude-advanced-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13.5px;
+      font-weight: 500;
+      color: #e3e2e0;
+      cursor: pointer;
+      margin-bottom: 24px;
+      user-select: none;
+    }
+
+    .claude-dialog-caution {
+      font-size: 12px;
+      line-height: 1.5;
+      color: #8c8a84;
+      margin-bottom: 20px;
+      padding-top: 4px;
+    }
+
+    .claude-dialog-footer-text {
+      font-size: 12px;
+      color: #8c8a84;
+      margin-bottom: 24px;
+      border-top: 1px solid #2d2c29;
+      padding-top: 16px;
+    }
+
+    .claude-dialog-footer-text a {
+      color: #58a6ff;
+      text-decoration: underline;
+    }
+
+    .claude-dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+
+    .claude-btn {
+      padding: 8px 16px;
+      font-size: 13.5px;
+      font-weight: 500;
+      border-radius: 8px;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+
+    .claude-btn-cancel {
+      background-color: #2c2b27;
+      color: #e3e2e0;
+      border: 1px solid #3c3b37;
+    }
+
+    .claude-btn-cancel:hover {
+      background-color: #383733;
+    }
+
+    .claude-btn-add {
+      background-color: #e3e2e0;
+      color: #161513;
+    }
+
+    .claude-btn-add:hover {
+      background-color: #ffffff;
+    }
   </style>
 </head>
 <body>
@@ -1095,7 +1289,7 @@ export class StreamableHttpTransport {
         </button>
         <button class="tab-btn" onclick="switchTab('claude')">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" role="img" aria-label="Claude Logo"><path d="M11.376 24L10.776 23.544L10.44 22.8L10.776 21.312L11.16 19.392L11.472 17.856L11.76 15.96L11.928 15.336L11.904 15.288L11.784 15.312L10.344 17.28L8.16 20.232L6.432 22.056L6.024 22.224L5.304 21.864L5.376 21.192L5.784 20.616L8.16 17.568L9.6 15.672L10.536 14.592L10.512 14.448H10.464L4.128 18.576L3 18.72L2.496 18.264L2.568 17.52L2.808 17.28L4.704 15.96L9.432 13.32L9.504 13.08L9.432 12.96H9.192L8.4 12.912L5.712 12.84L3.384 12.744L1.104 12.624L0.528 12.504L0 11.784L0.048 11.424L0.528 11.112L1.224 11.16L2.736 11.28L5.016 11.424L6.672 11.52L9.12 11.784H9.504L9.552 11.616L9.432 11.52L9.336 11.424L6.96 9.84L4.416 8.16L3.072 7.176L2.352 6.672L1.992 6.216L1.848 5.208L2.496 4.488L3.384 4.56L3.6 4.608L4.488 5.304L6.384 6.768L8.88 8.616L9.24 8.904L9.408 8.808V8.736L9.24 8.472L7.896 6.024L6.456 3.528L5.808 2.496L5.64 1.872C5.576 1.656 5.544 1.416 5.544 1.152L6.288 0.144001L6.696 0L7.704 0.144001L8.112 0.504001L8.736 1.92L9.72 4.152L11.28 7.176L11.736 8.088L11.976 8.904L12.072 9.168H12.24V9.024L12.36 7.296L12.6 5.208L12.84 2.52L12.912 1.752L13.296 0.840001L14.04 0.360001L14.616 0.624001L15.096 1.32L15.024 1.752L14.76 3.6L14.184 6.504L13.824 8.472H14.04L14.28 8.208L15.264 6.912L16.92 4.848L17.64 4.032L18.504 3.12L19.056 2.688H20.088L20.832 3.816L20.496 4.992L19.44 6.336L18.552 7.464L17.28 9.168L16.512 10.536L16.584 10.632H16.752L19.608 10.008L21.168 9.744L22.992 9.432L23.832 9.816L23.928 10.2L23.592 11.016L21.624 11.496L19.32 11.952L15.888 12.768L15.84 12.792L15.888 12.864L17.424 13.008L18.096 13.056H19.728L22.752 13.272L23.544 13.8L24 14.424L23.928 14.928L22.704 15.528L21.072 15.144L17.232 14.232L15.936 13.92H15.744V14.016L16.848 15.096L18.84 16.896L21.36 19.224L21.48 19.8L21.168 20.28L20.832 20.232L18.624 18.552L17.76 17.808L15.84 16.2H15.72V16.368L16.152 17.016L18.504 20.544L18.624 21.624L18.456 21.96L17.832 22.176L17.184 22.056L15.792 20.136L14.376 17.952L13.224 16.008L13.104 16.104L12.408 23.352L12.096 23.712L11.376 24Z" fill="var(--cds-clay, #d97757)"/></svg>
-          <span>Claude Desktop</span>
+          <span>Claude</span>
         </button>
         <button class="tab-btn" onclick="switchTab('antigravity')">
           <svg xmlns="http://www.w3.org/2000/svg" height="14" viewBox="0 0 24 24" width="14" style="flex:none;line-height:1;color:currentColor;"><title>Antigravity</title><mask height="23" id="lobe-icons-antigravity-0-_R_0_" maskUnits="userSpaceOnUse" width="24" x="0" y="1"><path d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z" fill="#fff"/></mask><g mask="url(#lobe-icons-antigravity-0-_R_0_)"><g filter="url(#lobe-icons-antigravity-1-_R_0_)"><path d="M-1.018-3.992c-.408 3.591 2.686 6.89 6.91 7.37 4.225.48 7.98-2.043 8.387-5.633.408-3.59-2.686-6.89-6.91-7.37-4.225-.479-7.98 2.043-8.387 5.633z" fill="#FFE432"/></g><g filter="url(#lobe-icons-antigravity-2-_R_0_)"><path d="M15.269 7.747c1.058 4.557 5.691 7.374 10.348 6.293 4.657-1.082 7.575-5.653 6.516-10.21-1.058-4.556-5.691-7.374-10.348-6.292-4.657 1.082-7.575 5.653-6.516 10.21z" fill="#FC413D"/></g><g filter="url(#lobe-icons-antigravity-3-_R_0_)"><path d="M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z" fill="#00B95C"/></g><g filter="url(#lobe-icons-antigravity-4-_R_0_)"><path d="M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z" fill="#00B95C"/></g><g filter="url(#lobe-icons-antigravity-5-_R_0_)"><path d="M-7.608 14.703c3.352 3.424 9.126 3.208 12.896-.483 3.77-3.69 4.108-9.459.756-12.883C2.69-2.087-3.083-1.871-6.853 1.82c-3.77 3.69-4.108 9.458-.755 12.883z" fill="#00B95C"/></g><g filter="url(#lobe-icons-antigravity-6-_R_0_)"><path d="M9.932 27.617c1.04 4.482 5.384 7.303 9.7 6.3 4.316-1.002 6.971-5.448 5.93-9.93-1.04-4.483-5.384-7.304-9.7-6.301-4.316 1.002-6.971 5.448-5.93 9.93z" fill="#3186FF"/></g><g filter="url(#lobe-icons-antigravity-7-_R_0_)"><path d="M2.572-8.185C.392-3.329 2.778 2.472 7.9 4.771c5.122 2.3 11.042.227 13.222-4.63 2.18-4.855-.205-10.656-5.327-12.955-5.122-2.3-11.042-.227-13.222 4.63z" fill="#FBBC04"/></g><g filter="url(#lobe-icons-antigravity-8-_R_0_)"><path d="M-3.267 38.686c-5.277-2.072 3.742-19.117 5.984-24.83 2.243-5.712 8.34-8.664 13.616-6.592 5.278 2.071 11.533 13.482 9.29 19.195-2.242 5.713-23.613 14.298-28.89 12.227z" fill="#3186FF"/></g><g filter="url(#lobe-icons-antigravity-9-_R_0_)"><path d="M28.71 17.471c-1.413 1.649-5.1.808-8.236-1.878-3.135-2.687-4.531-6.201-3.118-7.85 1.412-1.649 5.1-.808 8.235 1.878s4.532 6.2 3.119 7.85z" fill="#749BFF"/></g><g filter="url(#lobe-icons-antigravity-10-_R_0_)"><path d="M18.163 9.077c5.81 3.93 12.502 4.19 14.946.577 2.443-3.612-.287-9.727-6.098-13.658-5.81-3.931-12.502-4.19-14.946-.577-2.443 3.612.287 9.727 6.098 13.658z" fill="#FC413D"/></g><g filter="url(#lobe-icons-antigravity-11-_R_0_)"><path d="M-.915 2.684c-1.44 3.473-.97 6.967 1.05 7.804 2.02.837 4.824-1.3 6.264-4.772 1.44-3.473.97-6.967-1.05-7.804-2.02-.837-4.824 1.3-6.264 4.772z" fill="#FFEE48"/></g></g><defs><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="17.587" id="lobe-icons-antigravity-1-_R_0_" width="19.838" x="-3.288" y="-11.917"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="1.117"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="38.565" id="lobe-icons-antigravity-2-_R_0_" width="38.9" x="4.251" y="-13.493"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="5.4"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="36.517" id="lobe-icons-antigravity-3-_R_0_" width="40.955" x="-21.889" y="-10.592"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.591"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="36.517" id="lobe-icons-antigravity-4-_R_0_" width="40.955" x="-21.889" y="-10.592"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.591"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="36.595" id="lobe-icons-antigravity-5-_R_0_" width="36.632" x="-19.099" y="-10.278"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.591"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="34.087" id="lobe-icons-antigravity-6-_R_0_" width="33.533" x=".981" y="8.758"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.363"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="35.276" id="lobe-icons-antigravity-7-_R_0_" width="35.978" x="-6.143" y="-21.659"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.954"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="46.523" id="lobe-icons-antigravity-8-_R_0_" width="45.114" x="-11.96" y="-.46"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.531"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="24.054" id="lobe-icons-antigravity-9-_R_0_" width="25.094" x="10.485" y=".58"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.159"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="30.007" id="lobe-icons-antigravity-10-_R_0_" width="33.508" x="5.833" y="-12.467"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="2.669"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="26.151" id="lobe-icons-antigravity-11-_R_0_" width="22.194" x="-8.355" y="-8.876"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.303"/></filter></defs></svg>
@@ -1134,22 +1328,56 @@ export class StreamableHttpTransport {
 
       <!-- Claude Connection Tab -->
       <div class="tab-content" id="tab-claude">
-        <p style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-muted);">
-          Add the following configuration block to your Claude Desktop configuration file (<code>~/Library/Application Support/Claude/claude_desktop_config.json</code>):
+        <p style="font-size: 0.9rem; margin-bottom: 1rem; color: var(--text-muted);">
+          Connect remote tools directly via Claude's Web UI:
         </p>
-        <div class="code-container">
-          <button class="btn-copy" onclick="copyText('claude-config')">Copy JSON</button>
-          <pre id="claude-config">{
-  "mcpServers": {
-    // your other mcp servers
-    "${serverName.toLowerCase().replace(/\s+/g, '-')}": {
-      "command": "node",
-      "args": [
-        "/ABSOLUTE/PATH/TO/PARENT/FOLDER/${serverName.toLowerCase().replace(/\s+/g, '-')}/dist/index.js"
-      ]
-    }
-  }
-}</pre>
+        
+        <div class="claude-dialog-container">
+          <div class="claude-dialog-header">
+            <div class="claude-dialog-title-container">
+              <span class="claude-dialog-title">Add custom connector</span>
+              <span class="claude-beta-badge">BETA</span>
+            </div>
+            <div class="claude-close-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </div>
+          </div>
+          
+          <div class="claude-dialog-desc">
+            Connect Claude to your data and tools. <a href="https://support.anthropic.com" target="_blank">Learn more about connectors</a> or get started with <a href="https://support.anthropic.com" target="_blank">pre-built ones</a>.
+          </div>
+          
+          <div class="claude-input-group">
+            <div class="claude-input-wrapper">
+              <input type="text" class="claude-input" readonly value="${serverName.toLowerCase().replace(/\s+/g, '-')}">
+            </div>
+            <div class="claude-input-wrapper">
+              <input type="text" class="claude-input active-input" id="claude-connector-url" readonly value="${mcpEndpoint}">
+              <button class="btn-copy-input" onclick="copyText('claude-connector-url')">Copy</button>
+            </div>
+          </div>
+          
+          <div class="claude-advanced-toggle">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width:12px;height:12px;">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+            </svg>
+            <span>Advanced settings</span>
+          </div>
+          
+          <div class="claude-dialog-caution">
+            Only use connectors from developers you trust. Anthropic does not control which tools developers make available and cannot verify that they will work as intended or that they won't change.
+          </div>
+          
+          <div class="claude-dialog-footer-text">
+            Building an MCP server? <a href="https://github.com/modelcontextprotocol" target="_blank">Report issues and subscribe to updates here</a>
+          </div>
+          
+          <div class="claude-dialog-actions">
+            <button class="claude-btn claude-btn-cancel">Cancel</button>
+            <button class="claude-btn claude-btn-add">Add</button>
+          </div>
         </div>
       </div>
 
@@ -1272,6 +1500,35 @@ url = "${mcpEndpoint}"</pre>
       document.documentElement.className = savedTheme;
     })();
 
+    // Dynamically update localhost to current origin if served over HTTP/HTTPS
+    (function() {
+      if (window.location.protocol.startsWith('http')) {
+        const currentOrigin = window.location.origin;
+        const sseEl = document.getElementById('sse-endpoint');
+        if (!sseEl) return;
+        
+        let endpointPath = '/mcp';
+        try {
+          const urlObj = new URL(sseEl.innerText.trim());
+          endpointPath = urlObj.pathname;
+        } catch (e) {}
+        
+        const dynamicUrl = currentOrigin + endpointPath;
+        
+        const updateElementUrl = (id, targetUrl) => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.innerHTML = el.innerHTML.replace(/https?:\\/\\/[^\\s"]+/g, targetUrl);
+          }
+        };
+        
+        updateElementUrl('cursor-config', dynamicUrl);
+        updateElementUrl('antigravity-config', dynamicUrl);
+        updateElementUrl('codex-config', dynamicUrl);
+        updateElementUrl('sse-endpoint', dynamicUrl);
+      }
+    })();
+
     // Tab Switching
     function switchTab(tabId) {
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -1286,9 +1543,10 @@ url = "${mcpEndpoint}"</pre>
 
     // Copy to Clipboard
     function copyText(elementId) {
-      const text = document.getElementById(elementId).innerText;
+      const el = document.getElementById(elementId);
+      const text = el.tagName === 'INPUT' ? el.value : el.innerText;
       navigator.clipboard.writeText(text).then(() => {
-        const btn = document.querySelector('#' + elementId).parentNode.querySelector('.btn-copy');
+        const btn = el.parentNode.querySelector('.btn-copy') || el.parentNode.querySelector('.btn-copy-input');
         const originalText = btn.innerText;
         btn.innerText = 'Copied!';
         btn.style.background = 'rgba(16, 185, 129, 0.2)';
