@@ -1163,6 +1163,10 @@ export class StreamableHttpTransport {
       box-shadow: 0 0 0 1px #3890ff;
     }
 
+    .claude-input.active-input {
+      padding-right: 75px;
+    }
+
     .claude-input-wrapper .btn-copy-input {
       position: absolute;
       right: 10px;
@@ -1176,6 +1180,7 @@ export class StreamableHttpTransport {
       border-radius: 4px;
       cursor: pointer;
       transition: all 0.2s;
+      z-index: 2;
     }
 
     .claude-input-wrapper .btn-copy-input:hover {
