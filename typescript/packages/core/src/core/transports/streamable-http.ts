@@ -1440,17 +1440,12 @@ url = "${mcpEndpoint}"</pre>
     ${tools.length > 0 ? `
       <div class="tools-grid" id="tools-container">
         ${tools.map((tool, idx) => {
-      const hasWidget = (tool as any).widget || (tool as any).outputTemplate || tool._meta?.['openai/outputTemplate'];
       return `
             <div class="tool-card" data-name="${this.escapeHtml(tool.name).toLowerCase()}" data-desc="${this.escapeHtml(tool.description || '').toLowerCase()}">
               <div class="tool-header">
                 <div class="tool-name-container">
-                  <span class="tool-icon">⚡</span>
                   <span class="tool-name">${this.escapeHtml(tool.name)}</span>
                 </div>
-                ${hasWidget ? `
-                  <span class="badge widget">🎨 Widget UI</span>
-                ` : ''}
               </div>
               <p class="tool-description">${this.escapeHtml(tool.description || 'No description available')}</p>
               ${tool.inputSchema ? `
