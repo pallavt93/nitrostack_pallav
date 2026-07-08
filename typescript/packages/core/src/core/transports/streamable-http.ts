@@ -102,6 +102,7 @@ export class StreamableHttpTransport {
   private getToolsCallback?: () => Promise<McpTool[]>;
   private serverConfig?: { name: string; version: string; description?: string };
   private logoBase64?: string;
+  private codexLogoBase64?: string;
   private _routesRegistered = false;
   private mcpServerFactory?: McpServerFactory;
   private legacySseHandler?: LegacySseHandler;
@@ -191,9 +192,37 @@ export class StreamableHttpTransport {
       } else {
         this.logoBase64 = undefined;
       }
+
+      // Load Codex logo if present
+      const possibleCodexPaths = [
+        join(process.cwd(), 'codex-color.png'),
+        join(process.cwd(), '../codex-color.png'),
+        join(process.cwd(), '../../codex-color.png'),
+        '/Users/admin/Desktop/sdk-env-oauth/codex-color.png',
+      ];
+
+      let codexPath: string | null = null;
+      for (const path of possibleCodexPaths) {
+        try {
+          if (readFileSync(path, { flag: 'r' })) {
+            codexPath = path;
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+
+      if (codexPath) {
+        const codexBuffer = readFileSync(codexPath);
+        this.codexLogoBase64 = codexBuffer.toString('base64');
+      } else {
+        this.codexLogoBase64 = undefined;
+      }
     } catch (error) {
       // Logo is optional, continue without it
       this.logoBase64 = undefined;
+      this.codexLogoBase64 = undefined;
     }
   }
 
@@ -584,7 +613,15 @@ export class StreamableHttpTransport {
    * Generate HTML documentation page
    */
   private generateDocumentationPage(tools: McpTool[], mcpEndpoint: string): string {
-    const serverName = this.serverConfig?.name || 'NitroStack MCP Server';
+    const rawServerName = this.serverConfig?.name || 'NitroStack MCP Server';
+    const formatTitle = (name: string) => {
+      if (name.includes('/') || name.includes('\\')) return name;
+      return name
+        .split(/[-_]+/)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    };
+    const serverName = formatTitle(rawServerName);
     const serverVersion = this.serverConfig?.version || '1.0.0';
     const serverDescription = this.serverConfig?.description || 'A powerful MCP server built with NitroStack';
 
@@ -596,7 +633,7 @@ export class StreamableHttpTransport {
   <title>${serverName} - MCP Server Documentation</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700;800&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     /* Premium Dark & Light Themes */
     :root {
@@ -612,7 +649,8 @@ export class StreamableHttpTransport {
       --primary-rgb: 99, 102, 241;
       --accent: #a855f7;
       --success: #10b981;
-      --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-display: 'Space Grotesk', sans-serif;
       --font-mono: 'JetBrains Mono', monospace;
     }
     
@@ -629,6 +667,7 @@ export class StreamableHttpTransport {
       --primary-rgb: 79, 70, 229;
       --accent: #7e22ce;
       --success: #059669;
+      --font-display: 'Space Grotesk', sans-serif;
     }
 
     * {
@@ -725,6 +764,7 @@ export class StreamableHttpTransport {
     }
     
     .title {
+      font-family: var(--font-display);
       font-size: 2.5rem;
       font-weight: 800;
       letter-spacing: -0.03em;
@@ -1061,32 +1101,54 @@ export class StreamableHttpTransport {
           <svg xmlns="http://www.w3.org/2000/svg" height="14" viewBox="0 0 24 24" width="14" style="flex:none;line-height:1;color:currentColor;"><title>Antigravity</title><mask height="23" id="lobe-icons-antigravity-0-_R_0_" maskUnits="userSpaceOnUse" width="24" x="0" y="1"><path d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z" fill="#fff"/></mask><g mask="url(#lobe-icons-antigravity-0-_R_0_)"><g filter="url(#lobe-icons-antigravity-1-_R_0_)"><path d="M-1.018-3.992c-.408 3.591 2.686 6.89 6.91 7.37 4.225.48 7.98-2.043 8.387-5.633.408-3.59-2.686-6.89-6.91-7.37-4.225-.479-7.98 2.043-8.387 5.633z" fill="#FFE432"/></g><g filter="url(#lobe-icons-antigravity-2-_R_0_)"><path d="M15.269 7.747c1.058 4.557 5.691 7.374 10.348 6.293 4.657-1.082 7.575-5.653 6.516-10.21-1.058-4.556-5.691-7.374-10.348-6.292-4.657 1.082-7.575 5.653-6.516 10.21z" fill="#FC413D"/></g><g filter="url(#lobe-icons-antigravity-3-_R_0_)"><path d="M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z" fill="#00B95C"/></g><g filter="url(#lobe-icons-antigravity-4-_R_0_)"><path d="M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z" fill="#00B95C"/></g><g filter="url(#lobe-icons-antigravity-5-_R_0_)"><path d="M-7.608 14.703c3.352 3.424 9.126 3.208 12.896-.483 3.77-3.69 4.108-9.459.756-12.883C2.69-2.087-3.083-1.871-6.853 1.82c-3.77 3.69-4.108 9.458-.755 12.883z" fill="#00B95C"/></g><g filter="url(#lobe-icons-antigravity-6-_R_0_)"><path d="M9.932 27.617c1.04 4.482 5.384 7.303 9.7 6.3 4.316-1.002 6.971-5.448 5.93-9.93-1.04-4.483-5.384-7.304-9.7-6.301-4.316 1.002-6.971 5.448-5.93 9.93z" fill="#3186FF"/></g><g filter="url(#lobe-icons-antigravity-7-_R_0_)"><path d="M2.572-8.185C.392-3.329 2.778 2.472 7.9 4.771c5.122 2.3 11.042.227 13.222-4.63 2.18-4.855-.205-10.656-5.327-12.955-5.122-2.3-11.042-.227-13.222 4.63z" fill="#FBBC04"/></g><g filter="url(#lobe-icons-antigravity-8-_R_0_)"><path d="M-3.267 38.686c-5.277-2.072 3.742-19.117 5.984-24.83 2.243-5.712 8.34-8.664 13.616-6.592 5.278 2.071 11.533 13.482 9.29 19.195-2.242 5.713-23.613 14.298-28.89 12.227z" fill="#3186FF"/></g><g filter="url(#lobe-icons-antigravity-9-_R_0_)"><path d="M28.71 17.471c-1.413 1.649-5.1.808-8.236-1.878-3.135-2.687-4.531-6.201-3.118-7.85 1.412-1.649 5.1-.808 8.235 1.878s4.532 6.2 3.119 7.85z" fill="#749BFF"/></g><g filter="url(#lobe-icons-antigravity-10-_R_0_)"><path d="M18.163 9.077c5.81 3.93 12.502 4.19 14.946.577 2.443-3.612-.287-9.727-6.098-13.658-5.81-3.931-12.502-4.19-14.946-.577-2.443 3.612.287 9.727 6.098 13.658z" fill="#FC413D"/></g><g filter="url(#lobe-icons-antigravity-11-_R_0_)"><path d="M-.915 2.684c-1.44 3.473-.97 6.967 1.05 7.804 2.02.837 4.824-1.3 6.264-4.772 1.44-3.473.97-6.967-1.05-7.804-2.02-.837-4.824 1.3-6.264 4.772z" fill="#FFEE48"/></g></g><defs><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="17.587" id="lobe-icons-antigravity-1-_R_0_" width="19.838" x="-3.288" y="-11.917"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="1.117"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="38.565" id="lobe-icons-antigravity-2-_R_0_" width="38.9" x="4.251" y="-13.493"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="5.4"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="36.517" id="lobe-icons-antigravity-3-_R_0_" width="40.955" x="-21.889" y="-10.592"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.591"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="36.517" id="lobe-icons-antigravity-4-_R_0_" width="40.955" x="-21.889" y="-10.592"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.591"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="36.595" id="lobe-icons-antigravity-5-_R_0_" width="36.632" x="-19.099" y="-10.278"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.591"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="34.087" id="lobe-icons-antigravity-6-_R_0_" width="33.533" x=".981" y="8.758"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.363"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="35.276" id="lobe-icons-antigravity-7-_R_0_" width="35.978" x="-6.143" y="-21.659"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.954"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="46.523" id="lobe-icons-antigravity-8-_R_0_" width="45.114" x="-11.96" y="-.46"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.531"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="24.054" id="lobe-icons-antigravity-9-_R_0_" width="25.094" x="10.485" y=".58"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.159"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="30.007" id="lobe-icons-antigravity-10-_R_0_" width="33.508" x="5.833" y="-12.467"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="2.669"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="26.151" id="lobe-icons-antigravity-11-_R_0_" width="22.194" x="-8.355" y="-8.876"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.303"/></filter></defs></svg>
           <span>Antigravity</span>
         </button>
+        <button class="tab-btn" onclick="switchTab('codex')">
+          ${this.codexLogoBase64 ? `
+          <img src="data:image/png;base64,${this.codexLogoBase64}" alt="Codex Logo" style="width:14px;height:14px;flex:none;object-fit:contain;border-radius:2px;">
+          ` : `
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="flex:none;line-height:1;width:14px;height:14px;color:currentColor;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+          </svg>
+          `}
+          <span>Codex</span>
+        </button>
         <button class="tab-btn" onclick="switchTab('sse')">Raw SSE</button>
       </div>
 
       <!-- Cursor Connection Tab -->
       <div class="tab-content active" id="tab-cursor">
         <p style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-muted);">
-          To add this server to Cursor, go to <strong>Settings > Features > MCP</strong> and configure a new <strong>MCP</strong> server:
+          Add via Cursor Settings UI (<strong>Settings > Features > MCP > Add New MCP Server</strong>):
         </p>
         <div class="code-container">
-          <button class="btn-copy" onclick="copyText('cursor-config')">Copy Config</button>
-          <pre id="cursor-config">Name: ${serverName}
-Type: SSE
-URL: ${mcpEndpoint}</pre>
+          <button class="btn-copy" onclick="copyText('cursor-config')">Copy JSON</button>
+          <pre id="cursor-config">{
+  "mcpServers": {
+    // your other mcp servers
+    "${serverName.toLowerCase().replace(/\s+/g, '-')}": {
+      "url": "${mcpEndpoint}"
+    }
+  }
+}</pre>
         </div>
       </div>
 
       <!-- Claude Connection Tab -->
       <div class="tab-content" id="tab-claude">
         <p style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-muted);">
-          Add the following configuration block under <code>mcpServers</code> in your Claude Desktop configuration file:
+          Add the following configuration block to your Claude Desktop configuration file (<code>~/Library/Application Support/Claude/claude_desktop_config.json</code>):
         </p>
         <div class="code-container">
           <button class="btn-copy" onclick="copyText('claude-config')">Copy JSON</button>
-          <pre id="claude-config">"${serverName.toLowerCase().replace(/\s+/g, '-')}": {
-  "command": "npx",
-  "args": ["-y", "@nitrostack/cli", "connect", "${mcpEndpoint}"]
+          <pre id="claude-config">{
+  "mcpServers": {
+    // your other mcp servers
+    "${serverName.toLowerCase().replace(/\s+/g, '-')}": {
+      "command": "node",
+      "args": [
+        "/ABSOLUTE/PATH/TO/PARENT/FOLDER/${serverName.toLowerCase().replace(/\s+/g, '-')}/dist/index.js"
+      ]
+    }
+  }
 }</pre>
         </div>
       </div>
@@ -1094,13 +1156,30 @@ URL: ${mcpEndpoint}</pre>
       <!-- Antigravity Connection Tab -->
       <div class="tab-content" id="tab-antigravity">
         <p style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-muted);">
-          To add this server to Antigravity config, configure a new <strong>SSE</strong> server:
+          Add the following configuration block under <code>mcpServers</code> in your Antigravity configuration file (<code>~/.gemini/config/mcp_config.json</code>):
         </p>
         <div class="code-container">
-          <button class="btn-copy" onclick="copyText('antigravity-config')">Copy Config</button>
-          <pre id="antigravity-config">Name: ${serverName}
-Type: SSE
-URL: ${mcpEndpoint}</pre>
+          <button class="btn-copy" onclick="copyText('antigravity-config')">Copy JSON</button>
+          <pre id="antigravity-config">{
+  "mcpServers": {
+    // your other mcp servers
+    "${serverName.toLowerCase().replace(/\s+/g, '-')}": {
+      "serverUrl": "${mcpEndpoint}"
+    }
+  }
+}</pre>
+        </div>
+      </div>
+
+      <!-- Codex Connection Tab -->
+      <div class="tab-content" id="tab-codex">
+        <p style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-muted);">
+          Add the following configuration block to your Codex configuration file (<code>~/.codex/config.toml</code>):
+        </p>
+        <div class="code-container">
+          <button class="btn-copy" onclick="copyText('codex-config')">Copy TOML</button>
+          <pre id="codex-config">[mcp_servers.${serverName.toLowerCase().replace(/\s+/g, '-')}]
+url = "${mcpEndpoint}"</pre>
         </div>
       </div>
 
