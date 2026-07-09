@@ -106,10 +106,14 @@ function getCoreVersion(packageJsonPath: string): string | null {
 }
 
 /**
- * Parse version string to extract the actual version number
+ * Parse version string to extract the actual numeric version.
+ *
+ * Strips any leading range operator (^ ~ >= <= > <) and drops the pre-release
+ * suffix (e.g. `-beta.1`) so the dot-separated segments always parse to numbers
+ * instead of producing `NaN` in `compareVersions`.
  */
 function parseVersion(versionString: string): string {
-  return versionString.replace(/^[\^~>=<]+/, '');
+  return versionString.replace(/^[\^~>=<]+/, '').split('-')[0];
 }
 
 /**

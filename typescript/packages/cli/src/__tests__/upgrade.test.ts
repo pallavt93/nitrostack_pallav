@@ -47,5 +47,13 @@ describe('Upgrade Command', () => {
       expect(compareVersions('1.0.11', '1.0.11')).toBe(0);
       expect(compareVersions('^1.0.11', '1.0.11')).toBe(0);
     });
+
+    it('should handle pre-release identifiers without producing NaN', () => {
+      // Pre-release suffixes are stripped, so comparison is on the base version.
+      expect(compareVersions('1.0.0-beta.1', '1.0.0')).toBe(0);
+      expect(compareVersions('1.0.0-alpha.3', '1.0.0-beta.1')).toBe(0);
+      expect(compareVersions('1.2.0-rc.1', '1.1.0')).toBe(1);
+      expect(compareVersions('^1.0.0-beta.1', '1.1.0')).toBe(-1);
+    });
   });
 });

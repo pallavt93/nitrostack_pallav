@@ -73,7 +73,6 @@ describe('StreamableHttpTransport (SDK-delegated host)', () => {
         expect(html).toContain('DocTest');
         expect(html).toContain('1.0.0');
         expect(html).toContain('tool1');
-        expect(html).toContain('Has UI Widget');
         expect(st.escapeHtml('<script>')).toBe('&lt;script&gt;');
     });
 

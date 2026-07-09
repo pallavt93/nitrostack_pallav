@@ -85,6 +85,8 @@ interface McpSession {
   server: McpServer;
   transport: StreamableHTTPServerTransport;
   lastActivity: number;
+  /** When the session was created (used to reap sessions that never finish initialize). */
+  createdAt: number;
 }
 
 /**
@@ -108,7 +110,14 @@ export class StreamableHttpTransport {
   private mcpServerFactory?: McpServerFactory;
   private legacySseHandler?: LegacySseHandler;
   private mcpSessions: Map<string, McpSession> = new Map();
+  // Sessions that have been created but have not yet completed `initialize`
+  // (no session id assigned yet). Tracked separately so they count against the
+  // concurrency cap and get reaped if initialization never completes.
+  private pendingSessions: Set<McpSession> = new Set();
   private sessionCleanupInterval?: NodeJS.Timeout;
+
+  /** Grace period for a created session to finish `initialize` before it is reaped. */
+  private static readonly PENDING_SESSION_TIMEOUT_MS = 30_000;
 
   constructor(options: StreamableHttpTransportOptions = {}) {
     this.options = {
@@ -313,6 +322,7 @@ export class StreamableHttpTransport {
    * `mcp-session-id` header.
    */
   private async handleMcpRequest(req: Request, res: Response): Promise<void> {
+    let createdSession: McpSession | undefined;
     try {
       const sessionId = req.get('mcp-session-id');
       let session = sessionId ? this.mcpSessions.get(sessionId) : undefined;
@@ -321,7 +331,9 @@ export class StreamableHttpTransport {
         if (req.method === 'POST' && this.isInitializeRequest(req.body)) {
           // Bound memory: reject new sessions once at capacity. This defends
           // against unauthenticated `initialize` floods exhausting memory.
-          if (this.mcpSessions.size >= this.options.maxSessions) {
+          // Count both live and pending (not-yet-initialized) sessions so a
+          // burst of concurrent `initialize` requests cannot overshoot the cap.
+          if (this.mcpSessions.size + this.pendingSessions.size >= this.options.maxSessions) {
             res.status(429).json({
               jsonrpc: '2.0',
               error: {
@@ -333,6 +345,7 @@ export class StreamableHttpTransport {
             return;
           }
           session = await this.createSession();
+          createdSession = session;
         } else if (req.method === 'GET' && this.legacySseHandler) {
           // Cursor and other legacy SSE clients open GET first; Streamable HTTP
           // always starts with POST initialize. Delegate when a handler is wired.
@@ -359,6 +372,12 @@ export class StreamableHttpTransport {
       await session.transport.handleRequest(req as any, res as any, req.body);
     } catch (error: unknown) {
       console.error('MCP request error:', error);
+      // If we created a session for this request but handling it failed (e.g. a
+      // malformed initialize), tear it down immediately so it does not linger as
+      // an untracked/pending session until the sweeper reaps it.
+      if (createdSession && this.pendingSessions.has(createdSession)) {
+        this.destroySession(createdSession);
+      }
       if (!res.headersSent) {
         res.status(500).json({
           jsonrpc: '2.0',
@@ -382,10 +401,16 @@ export class StreamableHttpTransport {
     const server = this.mcpServerFactory();
     // Build the session object first so `lastActivity` is a shared, mutable
     // reference visible to both the session map and the idle sweeper.
-    const session: McpSession = { server, transport: undefined as unknown as StreamableHTTPServerTransport, lastActivity: Date.now() };
+    const now = Date.now();
+    const session: McpSession = { server, transport: undefined as unknown as StreamableHTTPServerTransport, lastActivity: now, createdAt: now };
+    // Register as pending until `initialize` completes; this bounds unfinished
+    // sessions against the cap and lets the sweeper reap ones that never finish.
+    this.pendingSessions.add(session);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => uuidv4(),
       onsessioninitialized: (sid: string) => {
+        // Session is now live: promote from pending to the tracked map.
+        this.pendingSessions.delete(session);
         this.mcpSessions.set(sid, session);
       },
     });
@@ -396,14 +421,43 @@ export class StreamableHttpTransport {
       if (sid) {
         this.mcpSessions.delete(sid);
       }
+      this.pendingSessions.delete(session);
       transport.onclose = undefined;
       server.close().catch(() => {
         // ignore close errors
       });
     };
 
-    await server.connect(transport);
+    try {
+      await server.connect(transport);
+    } catch (error) {
+      // Connect failed before the session could initialize: don't leak it.
+      this.destroySession(session);
+      throw error;
+    }
     return session;
+  }
+
+  /**
+   * Tear down a session, removing it from both the live and pending collections
+   * and closing its transport and server. Safe to call from the sweeper, request
+   * error paths, and shutdown.
+   */
+  private destroySession(session: McpSession): void {
+    const sid = session.transport?.sessionId;
+    if (sid) {
+      this.mcpSessions.delete(sid);
+    }
+    this.pendingSessions.delete(session);
+    if (session.transport) {
+      session.transport.onclose = undefined;
+      session.transport.close().catch(() => {
+        // ignore close errors
+      });
+    }
+    session.server.close().catch(() => {
+      // ignore close errors
+    });
   }
 
   /**
@@ -417,16 +471,16 @@ export class StreamableHttpTransport {
     }
     this.sessionCleanupInterval = setInterval(() => {
       const now = Date.now();
-      for (const [sid, session] of this.mcpSessions.entries()) {
+      // Reap live sessions that have been idle past the configured timeout.
+      for (const [, session] of this.mcpSessions.entries()) {
         if (now - session.lastActivity > this.options.sessionTimeout) {
-          this.mcpSessions.delete(sid);
-          session.transport.onclose = undefined;
-          session.transport.close().catch(() => {
-            // ignore close errors
-          });
-          session.server.close().catch(() => {
-            // ignore close errors
-          });
+          this.destroySession(session);
+        }
+      }
+      // Reap sessions that were created but never finished `initialize`.
+      for (const session of this.pendingSessions) {
+        if (now - session.createdAt > StreamableHttpTransport.PENDING_SESSION_TIMEOUT_MS) {
+          this.destroySession(session);
         }
       }
     }, 60_000); // sweep once a minute
@@ -502,15 +556,20 @@ export class StreamableHttpTransport {
       this.sessionCleanupInterval = undefined;
     }
 
-    // Close all live MCP sessions (SDK transports + their servers)
-    const sessions = Array.from(this.mcpSessions.values());
+    // Close all MCP sessions (live + pending), including their SDK transports
+    // and per-session servers. Use a Set to avoid double-closing a session that
+    // appears in both collections.
+    const sessions = new Set<McpSession>([...this.mcpSessions.values(), ...this.pendingSessions]);
     this.mcpSessions.clear();
+    this.pendingSessions.clear();
     for (const { server, transport } of sessions) {
-      transport.onclose = undefined;
-      try {
-        await transport.close();
-      } catch {
-        // ignore
+      if (transport) {
+        transport.onclose = undefined;
+        try {
+          await transport.close();
+        } catch {
+          // ignore
+        }
       }
       try {
         await server.close();
@@ -971,22 +1030,6 @@ export class StreamableHttpTransport {
       flex-grow: 1;
       margin-bottom: 1.5rem;
     }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      font-size: 0.65rem;
-      font-weight: 800;
-      padding: 0.25rem 0.5rem;
-      border-radius: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    .badge.widget {
-      background: rgba(168, 85, 247, 0.1);
-      color: var(--accent);
-      border: 1px solid rgba(168, 85, 247, 0.2);
-    }
-    
     .schema-toggle {
       background: rgba(var(--primary-rgb), 0.05);
       border: 1px solid rgba(var(--primary-rgb), 0.1);
