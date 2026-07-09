@@ -102,7 +102,6 @@ export class StreamableHttpTransport {
   private getToolsCallback?: () => Promise<McpTool[]>;
   private serverConfig?: { name: string; version: string; description?: string };
   private logoBase64?: string;
-  private codexLogoBase64?: string;
   private _routesRegistered = false;
   private mcpServerFactory?: McpServerFactory;
   private legacySseHandler?: LegacySseHandler;
@@ -193,36 +192,9 @@ export class StreamableHttpTransport {
         this.logoBase64 = undefined;
       }
 
-      // Load Codex logo if present
-      const possibleCodexPaths = [
-        join(process.cwd(), 'codex-color.png'),
-        join(process.cwd(), '../codex-color.png'),
-        join(process.cwd(), '../../codex-color.png'),
-        '/Users/admin/Desktop/sdk-env-oauth/codex-color.png',
-      ];
-
-      let codexPath: string | null = null;
-      for (const path of possibleCodexPaths) {
-        try {
-          if (readFileSync(path, { flag: 'r' })) {
-            codexPath = path;
-            break;
-          }
-        } catch {
-          continue;
-        }
-      }
-
-      if (codexPath) {
-        const codexBuffer = readFileSync(codexPath);
-        this.codexLogoBase64 = codexBuffer.toString('base64');
-      } else {
-        this.codexLogoBase64 = undefined;
-      }
     } catch (error) {
       // Logo is optional, continue without it
       this.logoBase64 = undefined;
-      this.codexLogoBase64 = undefined;
     }
   }
 
@@ -1057,6 +1029,302 @@ export class StreamableHttpTransport {
       text-decoration: underline;
     }
 
+    /* ChatGPT New App Dialog Mockup Styles */
+    .chatgpt-dialog-container {
+      background-color: #171717;
+      border: 1px solid #2f2f2f;
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 520px;
+      color: #ececec;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+      margin: 1.5rem auto;
+      position: relative;
+      text-align: left;
+    }
+
+    .chatgpt-dialog-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .chatgpt-dialog-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #ececec;
+    }
+
+    .chatgpt-close-btn {
+      color: #b4b4b4;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      transition: background-color 0.2s;
+    }
+
+    .chatgpt-close-btn:hover {
+      background-color: #2f2f2f;
+      color: #ececec;
+    }
+
+    .chatgpt-section-label {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #ececec;
+    }
+
+    .chatgpt-icon-picker {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .chatgpt-icon-box {
+      width: 56px;
+      height: 56px;
+      border: 1px dashed #424242;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #b4b4b4;
+      transition: border-color 0.2s;
+    }
+
+    .chatgpt-icon-box:hover {
+      border-color: #b4b4b4;
+    }
+
+    .chatgpt-icon-desc {
+      font-size: 12.5px;
+      color: #b4b4b4;
+      line-height: 1.4;
+      flex: 1;
+    }
+
+    .chatgpt-input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .chatgpt-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .chatgpt-input-wrapper {
+      position: relative;
+      width: 100%;
+    }
+
+    .chatgpt-input {
+      width: 100%;
+      background-color: #212121;
+      border: 1px solid #424242;
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #ececec;
+      font-size: 14.5px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .chatgpt-input::placeholder {
+      color: #676767;
+    }
+
+    .chatgpt-input:focus, .chatgpt-input.active-input {
+      border-color: #10a37f;
+    }
+
+    .chatgpt-input.active-input {
+      padding-right: 75px;
+    }
+
+    .chatgpt-input-wrapper .btn-copy-input {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #ececec;
+      padding: 4px 8px;
+      font-size: 11px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+      z-index: 2;
+    }
+
+    .chatgpt-input-wrapper .btn-copy-input:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .chatgpt-connection-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .chatgpt-toggle-switch {
+      background-color: #212121;
+      border: 1px solid #424242;
+      border-radius: 9999px;
+      display: flex;
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .chatgpt-toggle-btn {
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: 9999px;
+      border: none;
+      cursor: pointer;
+      color: #ececec;
+      background-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .chatgpt-toggle-btn.active {
+      background-color: #2f2f2f;
+      color: #ffffff;
+    }
+
+    .chatgpt-dropdown {
+      width: 100%;
+      background-color: #212121;
+      border: 1px solid #424242;
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #ececec;
+      font-size: 14.5px;
+      appearance: none;
+      outline: none;
+      cursor: pointer;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b4b4b4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      background-size: 16px;
+    }
+
+    .chatgpt-risk-alert {
+      background-color: #2c1e16;
+      border: 1px solid #573a21;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+
+    .chatgpt-risk-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      color: #f5c096;
+      margin-bottom: 12px;
+      line-height: 1.4;
+    }
+
+    .chatgpt-risk-header a {
+      color: #f5c096;
+      text-decoration: underline;
+    }
+
+    .chatgpt-risk-checkbox-wrapper {
+      background-color: #171717;
+      border: 1px solid #2f2f2f;
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .chatgpt-checkbox {
+      width: 16px;
+      height: 16px;
+      accent-color: #10a37f;
+      cursor: pointer;
+      margin-top: 3px;
+    }
+
+    .chatgpt-risk-checkbox-text {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .chatgpt-checkbox-label {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #ececec;
+      cursor: pointer;
+    }
+
+    .chatgpt-checkbox-desc {
+      font-size: 12.5px;
+      color: #b4b4b4;
+      line-height: 1.4;
+    }
+
+    .chatgpt-dialog-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chatgpt-guide-link {
+      font-size: 13.5px;
+      color: #b4b4b4;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.2s;
+    }
+
+    .chatgpt-guide-link:hover {
+      color: #ececec;
+    }
+
+    .chatgpt-btn-create {
+      background-color: #ffffff;
+      color: #000000;
+      padding: 8px 20px;
+      font-size: 13.5px;
+      font-weight: 600;
+      border-radius: 9999px;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .chatgpt-btn-create:hover {
+      background-color: #ececec;
+    }
+
     /* Claude Custom Connector Mockup Styles */
     .claude-dialog-container {
       background-color: #201f1d;
@@ -1296,18 +1564,22 @@ export class StreamableHttpTransport {
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" role="img" aria-label="Claude Logo"><path d="M11.376 24L10.776 23.544L10.44 22.8L10.776 21.312L11.16 19.392L11.472 17.856L11.76 15.96L11.928 15.336L11.904 15.288L11.784 15.312L10.344 17.28L8.16 20.232L6.432 22.056L6.024 22.224L5.304 21.864L5.376 21.192L5.784 20.616L8.16 17.568L9.6 15.672L10.536 14.592L10.512 14.448H10.464L4.128 18.576L3 18.72L2.496 18.264L2.568 17.52L2.808 17.28L4.704 15.96L9.432 13.32L9.504 13.08L9.432 12.96H9.192L8.4 12.912L5.712 12.84L3.384 12.744L1.104 12.624L0.528 12.504L0 11.784L0.048 11.424L0.528 11.112L1.224 11.16L2.736 11.28L5.016 11.424L6.672 11.52L9.12 11.784H9.504L9.552 11.616L9.432 11.52L9.336 11.424L6.96 9.84L4.416 8.16L3.072 7.176L2.352 6.672L1.992 6.216L1.848 5.208L2.496 4.488L3.384 4.56L3.6 4.608L4.488 5.304L6.384 6.768L8.88 8.616L9.24 8.904L9.408 8.808V8.736L9.24 8.472L7.896 6.024L6.456 3.528L5.808 2.496L5.64 1.872C5.576 1.656 5.544 1.416 5.544 1.152L6.288 0.144001L6.696 0L7.704 0.144001L8.112 0.504001L8.736 1.92L9.72 4.152L11.28 7.176L11.736 8.088L11.976 8.904L12.072 9.168H12.24V9.024L12.36 7.296L12.6 5.208L12.84 2.52L12.912 1.752L13.296 0.840001L14.04 0.360001L14.616 0.624001L15.096 1.32L15.024 1.752L14.76 3.6L14.184 6.504L13.824 8.472H14.04L14.28 8.208L15.264 6.912L16.92 4.848L17.64 4.032L18.504 3.12L19.056 2.688H20.088L20.832 3.816L20.496 4.992L19.44 6.336L18.552 7.464L17.28 9.168L16.512 10.536L16.584 10.632H16.752L19.608 10.008L21.168 9.744L22.992 9.432L23.832 9.816L23.928 10.2L23.592 11.016L21.624 11.496L19.32 11.952L15.888 12.768L15.84 12.792L15.888 12.864L17.424 13.008L18.096 13.056H19.728L22.752 13.272L23.544 13.8L24 14.424L23.928 14.928L22.704 15.528L21.072 15.144L17.232 14.232L15.936 13.92H15.744V14.016L16.848 15.096L18.84 16.896L21.36 19.224L21.48 19.8L21.168 20.28L20.832 20.232L18.624 18.552L17.76 17.808L15.84 16.2H15.72V16.368L16.152 17.016L18.504 20.544L18.624 21.624L18.456 21.96L17.832 22.176L17.184 22.056L15.792 20.136L14.376 17.952L13.224 16.008L13.104 16.104L12.408 23.352L12.096 23.712L11.376 24Z" fill="var(--cds-clay, #d97757)"/></svg>
           <span>Claude</span>
         </button>
+        <button class="tab-btn" onclick="switchTab('chatgpt')">
+          <svg height="14" style="flex:none;line-height:1;" viewBox="56.632 381.702 264.715 264.715" width="14" xmlns="http://www.w3.org/2000/svg">
+            <path d="m56.692 529c.002-31.163-.027-61.826.016-92.489.044-30.7 24.229-54.79 54.984-54.797 51.994-.012 103.987.007 155.981.01 32.903.002 56.654 23.087 56.888 56.08.352 49.488.21 98.98.327 148.47.037 15.998-3.376 30.764-14.775 42.775-10.442 11.003-22.98 17.351-38.432 17.344-53.993-.026-107.987.024-161.98-.013-28.704-.02-52.881-24.156-52.989-52.888-.08-21.33-.018-42.661-.02-64.492m36.914-50.872c-7.633 18.562-5.244 35.834 6.913 51.7 1.914 2.498 1.663 4.727 1.072 7.443-7.58 34.81 20.365 66.036 55.857 62.182 3.99-.433 6.435.593 9.239 3.098 26.543 23.72 68.247 14.479 82.183-18.214 1.349-3.165 3.428-4.465 6.471-5.449 34.93-11.295 47.479-50.421 25.601-79.873-1.785-2.404-2.227-4.494-1.388-7.337 1.97-6.67 1.973-13.618.775-20.32-4.99-27.924-30.653-45.673-57.108-42.222-3.144.41-5.646-.188-8.159-2.485-26.77-24.472-68.24-15.636-82.938 17.639-1.18 2.672-2.706 4.202-5.573 5.04-15.09 4.416-25.921 13.898-32.945 28.798" fill="#000000"></path>
+            <path d="m245.218 509.808c-15.135-8.685-29.953-17.184-46.113-26.452 6.742-3.74 12.165-6.834 17.681-9.75 1.475-.78 2.876.338 4.176 1.08 13.457 7.68 27.148 14.98 40.32 23.12 25.06 15.487 23.505 52.57-2.541 66.43-1.434.763-2.837 1.784-4.692 1.4-1.756-1.571-1.185-3.696-1.193-5.608-.053-12.5-.352-25.01.107-37.494.229-6.212-1.728-10.264-7.745-12.726zm-128.085 56.862c-3.736-7.812-5.599-15.525-3.8-23.69 2.342-.773 3.61.582 4.99 1.362 11.595 6.56 23.268 12.994 34.68 19.86 4.433 2.667 8.064 2.664 12.471.073 13.78-8.102 27.733-15.913 41.643-23.793 1.67-.946 3.174-2.519 6.083-1.853 0 5.986.083 12.084-.049 18.177-.04 1.868-1.785 2.654-3.245 3.49-12.716 7.278-25.349 14.707-38.156 21.821-19.901 11.054-42.145 4.788-54.617-15.446z" fill="#ffffff"></path>
+            <path d="m117.717 529.358c-13.198-10.171-18.667-26.341-14.275-41.551 3.646-12.626 14.622-23.998 24.016-24.838 1.291 1.587.763 3.495.77 5.261.053 13.164.202 26.332-.05 39.491-.093 4.79 1.623 7.69 5.78 9.986 13.851 7.65 27.562 15.557 41.287 23.433 1.824 1.046 3.995 1.722 5.547 4.432-5.261 3.649-10.826 6.757-16.63 9.448-1.315.61-2.609-.302-3.75-.96a13870.218 13870.218 0 0 1 -42.695-24.702zm72.803-50.784a58896.5 58896.5 0 0 1 -22.557 12.779c0-7.475-.073-13.685.056-19.891.03-1.408 1.452-2.147 2.625-2.812 13.91-7.89 27.554-16.302 41.791-23.548 26.078-13.273 57.24 7.383 55.845 36.599-.062 1.313.021 2.664-.89 3.822-2.293.758-3.803-.92-5.44-1.844-11.319-6.386-22.644-12.764-33.828-19.379-4.35-2.573-8.163-2.735-12.567-.06-8.11 4.928-16.465 9.455-25.035 14.334zm35.846 115.859c-16.363 11.937-39.942 11.684-49.18-.522 2.317-2.674 5.63-3.979 8.58-5.7 10.215-5.96 20.483-11.834 30.835-17.552 3.635-2.008 5.192-4.683 5.16-8.84-.123-16.33-.06-32.66-.008-48.99.006-1.749-.563-3.658 1.184-5.707 5.742 2.282 10.879 5.914 16.22 9.127 1.457.876 1.21 2.636 1.209 4.127-.008 15.663.262 31.333-.145 46.986-.284 10.874-5.38 19.75-13.855 27.071z" fill="#ffffff"></path>
+            <path d="m146.524 443.67c14.8-23.755 46.36-21.857 57.2-9.16-2.357 2.921-5.88 4.134-8.975 5.937-9.918 5.778-19.777 11.67-29.86 17.148-4.062 2.207-5.672 5.044-5.633 9.55.136 15.976.067 31.953.022 47.93-.006 1.947.48 3.992-1.07 6.573-5.68-2.855-11.26-5.933-16.504-9.609-1.373-.962-.998-2.737-.998-4.208-.006-15.31-.067-30.622.068-45.932.056-6.466 2.349-12.362 5.75-18.23z" fill="#ffffff"></path>
+            <path d="m191.565 539.596c-8.515-2.437-15.28-7.635-22.575-11.831-1.463-.842-1.265-2.609-1.269-4.102-.014-6.155.096-12.312-.052-18.463-.07-2.874 1.065-4.61 3.542-5.951a450.21 450.21 0 0 0 16.035-9.14c2.255-1.344 4.233-1.398 6.502-.06 5.442 3.21 10.924 6.357 16.482 9.361 2.397 1.296 3.133 3.114 3.093 5.688-.095 6.153-.15 12.312.035 18.461.088 2.946-1.214 4.563-3.632 5.882-5.982 3.264-11.884 6.676-18.16 10.155z" fill="#ffffff"></path>
+          </svg>
+          <span>ChatGPT</span>
+        </button>
         <button class="tab-btn" onclick="switchTab('antigravity')">
           <svg xmlns="http://www.w3.org/2000/svg" height="14" viewBox="0 0 24 24" width="14" style="flex:none;line-height:1;color:currentColor;"><title>Antigravity</title><mask height="23" id="lobe-icons-antigravity-0-_R_0_" maskUnits="userSpaceOnUse" width="24" x="0" y="1"><path d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z" fill="#fff"/></mask><g mask="url(#lobe-icons-antigravity-0-_R_0_)"><g filter="url(#lobe-icons-antigravity-1-_R_0_)"><path d="M-1.018-3.992c-.408 3.591 2.686 6.89 6.91 7.37 4.225.48 7.98-2.043 8.387-5.633.408-3.59-2.686-6.89-6.91-7.37-4.225-.479-7.98 2.043-8.387 5.633z" fill="#FFE432"/></g><g filter="url(#lobe-icons-antigravity-2-_R_0_)"><path d="M15.269 7.747c1.058 4.557 5.691 7.374 10.348 6.293 4.657-1.082 7.575-5.653 6.516-10.21-1.058-4.556-5.691-7.374-10.348-6.292-4.657 1.082-7.575 5.653-6.516 10.21z" fill="#FC413D"/></g><g filter="url(#lobe-icons-antigravity-3-_R_0_)"><path d="M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z" fill="#00B95C"/></g><g filter="url(#lobe-icons-antigravity-4-_R_0_)"><path d="M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z" fill="#00B95C"/></g><g filter="url(#lobe-icons-antigravity-5-_R_0_)"><path d="M-7.608 14.703c3.352 3.424 9.126 3.208 12.896-.483 3.77-3.69 4.108-9.459.756-12.883C2.69-2.087-3.083-1.871-6.853 1.82c-3.77 3.69-4.108 9.458-.755 12.883z" fill="#00B95C"/></g><g filter="url(#lobe-icons-antigravity-6-_R_0_)"><path d="M9.932 27.617c1.04 4.482 5.384 7.303 9.7 6.3 4.316-1.002 6.971-5.448 5.93-9.93-1.04-4.483-5.384-7.304-9.7-6.301-4.316 1.002-6.971 5.448-5.93 9.93z" fill="#3186FF"/></g><g filter="url(#lobe-icons-antigravity-7-_R_0_)"><path d="M2.572-8.185C.392-3.329 2.778 2.472 7.9 4.771c5.122 2.3 11.042.227 13.222-4.63 2.18-4.855-.205-10.656-5.327-12.955-5.122-2.3-11.042-.227-13.222 4.63z" fill="#FBBC04"/></g><g filter="url(#lobe-icons-antigravity-8-_R_0_)"><path d="M-3.267 38.686c-5.277-2.072 3.742-19.117 5.984-24.83 2.243-5.712 8.34-8.664 13.616-6.592 5.278 2.071 11.533 13.482 9.29 19.195-2.242 5.713-23.613 14.298-28.89 12.227z" fill="#3186FF"/></g><g filter="url(#lobe-icons-antigravity-9-_R_0_)"><path d="M28.71 17.471c-1.413 1.649-5.1.808-8.236-1.878-3.135-2.687-4.531-6.201-3.118-7.85 1.412-1.649 5.1-.808 8.235 1.878s4.532 6.2 3.119 7.85z" fill="#749BFF"/></g><g filter="url(#lobe-icons-antigravity-10-_R_0_)"><path d="M18.163 9.077c5.81 3.93 12.502 4.19 14.946.577 2.443-3.612-.287-9.727-6.098-13.658-5.81-3.931-12.502-4.19-14.946-.577-2.443 3.612.287 9.727 6.098 13.658z" fill="#FC413D"/></g><g filter="url(#lobe-icons-antigravity-11-_R_0_)"><path d="M-.915 2.684c-1.44 3.473-.97 6.967 1.05 7.804 2.02.837 4.824-1.3 6.264-4.772 1.44-3.473.97-6.967-1.05-7.804-2.02-.837-4.824 1.3-6.264 4.772z" fill="#FFEE48"/></g></g><defs><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="17.587" id="lobe-icons-antigravity-1-_R_0_" width="19.838" x="-3.288" y="-11.917"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="1.117"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="38.565" id="lobe-icons-antigravity-2-_R_0_" width="38.9" x="4.251" y="-13.493"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="5.4"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="36.517" id="lobe-icons-antigravity-3-_R_0_" width="40.955" x="-21.889" y="-10.592"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.591"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="36.517" id="lobe-icons-antigravity-4-_R_0_" width="40.955" x="-21.889" y="-10.592"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.591"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="36.595" id="lobe-icons-antigravity-5-_R_0_" width="36.632" x="-19.099" y="-10.278"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.591"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="34.087" id="lobe-icons-antigravity-6-_R_0_" width="33.533" x=".981" y="8.758"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="4.363"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="35.276" id="lobe-icons-antigravity-7-_R_0_" width="35.978" x="-6.143" y="-21.659"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.954"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="46.523" id="lobe-icons-antigravity-8-_R_0_" width="45.114" x="-11.96" y="-.46"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.531"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="24.054" id="lobe-icons-antigravity-9-_R_0_" width="25.094" x="10.485" y=".58"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.159"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="30.007" id="lobe-icons-antigravity-10-_R_0_" width="33.508" x="5.833" y="-12.467"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="2.669"/></filter><filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="26.151" id="lobe-icons-antigravity-11-_R_0_" width="22.194" x="-8.355" y="-8.876"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_977_115" stdDeviation="3.303"/></filter></defs></svg>
           <span>Antigravity</span>
         </button>
         <button class="tab-btn" onclick="switchTab('codex')">
-          ${this.codexLogoBase64 ? `
-          <img src="data:image/png;base64,${this.codexLogoBase64}" alt="Codex Logo" style="width:14px;height:14px;flex:none;object-fit:contain;border-radius:2px;">
-          ` : `
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="flex:none;line-height:1;width:14px;height:14px;color:currentColor;">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
-          </svg>
-          `}
+          <svg height="14" style="flex:none;line-height:1" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><title>Codex</title><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="url(#lobe-icons-codex-_R_0_)"></path><defs><linearGradient gradientUnits="userSpaceOnUse" id="lobe-icons-codex-_R_0_" x1="12" x2="12" y1="3" y2="21"><stop stop-color="#B1A7FF"></stop><stop offset=".5" stop-color="#7A9DFF"></stop><stop offset="1" stop-color="#3941FF"></stop></linearGradient></defs></svg>
           <span>Codex</span>
         </button>
         <button class="tab-btn" onclick="switchTab('sse')">Raw SSE</button>
@@ -1382,6 +1654,101 @@ export class StreamableHttpTransport {
           <div class="claude-dialog-actions">
             <button class="claude-btn claude-btn-cancel">Cancel</button>
             <button class="claude-btn claude-btn-add">Add</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ChatGPT Connection Tab -->
+      <div class="tab-content" id="tab-chatgpt">
+        <p style="font-size: 0.9rem; margin-bottom: 1rem; color: var(--text-muted);">
+          Configure custom tools directly via ChatGPT's Web UI:
+        </p>
+        
+        <div class="chatgpt-dialog-container">
+          <div class="chatgpt-dialog-header">
+            <span class="chatgpt-dialog-title">New App</span>
+            <div class="chatgpt-close-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </div>
+          </div>
+          
+          <div class="chatgpt-section-label">Icon <span style="font-weight: normal; color: #b4b4b4;">(optional)</span></div>
+          <div class="chatgpt-icon-picker">
+            <div class="chatgpt-icon-box">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:20px;height:20px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+            </div>
+            <div class="chatgpt-icon-desc">
+              PNG only. Best results at 256 x 256 px or larger. Max file size: 10 KB
+            </div>
+          </div>
+          
+          <div class="chatgpt-input-group">
+            <div class="chatgpt-field">
+              <div class="chatgpt-section-label">Name</div>
+              <input type="text" class="chatgpt-input" readonly value="${serverName.toLowerCase().replace(/\s+/g, '-')}">
+            </div>
+            
+            <div class="chatgpt-field">
+              <div class="chatgpt-section-label">Description <span style="font-weight: normal; color: #b4b4b4;">(optional)</span></div>
+              <input type="text" class="chatgpt-input" readonly placeholder="Explain what it does in a few words">
+            </div>
+            
+            <div class="chatgpt-field">
+              <div class="chatgpt-connection-header">
+                <div class="chatgpt-section-label" style="margin-bottom: 0;">Connection</div>
+                <div class="chatgpt-toggle-switch">
+                  <button class="chatgpt-toggle-btn active">Server URL</button>
+                  <button class="chatgpt-toggle-btn">
+                    <span>Tunnel</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:12px;height:12px;color:#b4b4b4;">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="chatgpt-input-wrapper">
+                <input type="text" class="chatgpt-input active-input" id="chatgpt-connector-url" readonly value="${mcpEndpoint}">
+                <button class="btn-copy-input" onclick="copyText('chatgpt-connector-url')">Copy</button>
+              </div>
+            </div>
+            
+            <div class="chatgpt-field">
+              <div class="chatgpt-section-label">Authentication</div>
+              <select class="chatgpt-dropdown" disabled>
+                <option>No Auth</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="chatgpt-risk-alert">
+            <div class="chatgpt-risk-header">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:20px;height:20px;color:#f59e0b;flex:none;margin-top:1px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+              </svg>
+              <span>Custom MCP servers introduce risk. <a href="https://openai.com" target="_blank">Learn more</a></span>
+            </div>
+            
+            <div class="chatgpt-risk-checkbox-wrapper">
+              <input type="checkbox" class="chatgpt-checkbox" id="chatgpt-confirm-risk" checked disabled>
+              <div class="chatgpt-risk-checkbox-text">
+                <label class="chatgpt-checkbox-label" for="chatgpt-confirm-risk">I understand and want to continue</label>
+                <span class="chatgpt-checkbox-desc">OpenAI hasn't reviewed this MCP server. Attackers may attempt to steal your data or trick the model into taking unintended actions, including destroying data.</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="chatgpt-dialog-footer">
+            <a class="chatgpt-guide-link" href="https://platform.openai.com/docs" target="_blank">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+              </svg>
+              <span>Read the guide</span>
+            </a>
+            <button class="chatgpt-btn-create">Create</button>
           </div>
         </div>
       </div>
@@ -1518,11 +1885,17 @@ url = "${mcpEndpoint}"</pre>
         const updateElementUrl = (id, targetUrl) => {
           const el = document.getElementById(id);
           if (el) {
-            el.innerHTML = el.innerHTML.replace(/https?:\\/\\/[^\\s"]+/g, targetUrl);
+            if (el.tagName === 'INPUT') {
+              el.value = el.value.replace(/https?:\\/\\/[^\\s"]+/g, targetUrl);
+            } else {
+              el.innerHTML = el.innerHTML.replace(/https?:\\/\\/[^\\s"]+/g, targetUrl);
+            }
           }
         };
         
         updateElementUrl('cursor-config', dynamicUrl);
+        updateElementUrl('claude-connector-url', dynamicUrl);
+        updateElementUrl('chatgpt-connector-url', dynamicUrl);
         updateElementUrl('antigravity-config', dynamicUrl);
         updateElementUrl('codex-config', dynamicUrl);
         updateElementUrl('sse-endpoint', dynamicUrl);
