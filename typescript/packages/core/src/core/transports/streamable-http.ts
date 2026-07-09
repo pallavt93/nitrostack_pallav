@@ -624,6 +624,10 @@ export class StreamableHttpTransport {
       --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       --font-display: 'Space Grotesk', sans-serif;
       --font-mono: 'JetBrains Mono', monospace;
+      --card-shadow: 0 4px 30px rgba(0, 0, 0, 0.15);
+      --card-shadow-hover: 0 12px 30px rgba(99, 102, 241, 0.12);
+      --codex-badge-bg: #ffffff;
+      --logo-bg: rgba(255, 255, 255, 0.04);
     }
     
     .light {
@@ -640,6 +644,10 @@ export class StreamableHttpTransport {
       --accent: #7e22ce;
       --success: #059669;
       --font-display: 'Space Grotesk', sans-serif;
+      --card-shadow: 0 8px 30px rgba(15, 23, 42, 0.04);
+      --card-shadow-hover: 0 20px 40px rgba(79, 70, 229, 0.12);
+      --codex-badge-bg: #1e1e1e;
+      --logo-bg: rgba(15, 23, 42, 0.04);
     }
 
     * {
@@ -689,7 +697,20 @@ export class StreamableHttpTransport {
     }
     .btn-toggle:hover {
       border-color: var(--primary);
-      box-shadow: 0 0 12px rgba(var(--primary-rgb), 0.15);
+      box-shadow: var(--card-shadow-hover);
+    }
+    
+    .icon-sun {
+      display: inline-block;
+    }
+    .icon-moon {
+      display: none;
+    }
+    .light .icon-sun {
+      display: none;
+    }
+    .light .icon-moon {
+      display: inline-block;
     }
     
     /* Premium Header */
@@ -706,7 +727,7 @@ export class StreamableHttpTransport {
       text-align: center;
       position: relative;
       overflow: hidden;
-      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+      box-shadow: var(--card-shadow);
     }
     
     header::before {
@@ -720,7 +741,7 @@ export class StreamableHttpTransport {
     }
     
     .logo-container {
-      background: rgba(255, 255, 255, 0.04);
+      background: var(--logo-bg);
       border-radius: 20px;
       padding: 1rem;
       margin-bottom: 1.5rem;
@@ -772,7 +793,7 @@ export class StreamableHttpTransport {
       padding: 2.25rem;
       margin-bottom: 2rem;
       backdrop-filter: blur(16px);
-      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+      box-shadow: var(--card-shadow);
     }
     
     .section-title {
@@ -916,11 +937,11 @@ export class StreamableHttpTransport {
       display: flex;
       flex-direction: column;
       backdrop-filter: blur(12px);
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+      box-shadow: var(--card-shadow);
     }
     .tool-card:hover {
       border-color: var(--border-color-hover);
-      box-shadow: 0 12px 30px rgba(var(--primary-rgb), 0.08);
+      box-shadow: var(--card-shadow-hover);
       transform: translateY(-4px);
     }
     .tool-header {
@@ -1529,8 +1550,13 @@ export class StreamableHttpTransport {
   <div class="wrapper">
     <div class="controls">
       <button class="btn-toggle" onclick="toggleTheme()" id="theme-btn">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:1.15rem;height:1.15rem;">
+        <!-- Sun icon (shown in dark theme) -->
+        <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:1.15rem;height:1.15rem;">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
+        </svg>
+        <!-- Moon icon (shown in light theme) -->
+        <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:1.15rem;height:1.15rem;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" />
         </svg>
         <span>Toggle Theme</span>
       </button>
@@ -1579,7 +1605,7 @@ export class StreamableHttpTransport {
           <span>Antigravity</span>
         </button>
         <button class="tab-btn" onclick="switchTab('codex')">
-          <svg height="14" style="flex:none;line-height:1" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><title>Codex</title><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="url(#lobe-icons-codex-_R_0_)"></path><defs><linearGradient gradientUnits="userSpaceOnUse" id="lobe-icons-codex-_R_0_" x1="12" x2="12" y1="3" y2="21"><stop stop-color="#B1A7FF"></stop><stop offset=".5" stop-color="#7A9DFF"></stop><stop offset="1" stop-color="#3941FF"></stop></linearGradient></defs></svg>
+          <svg height="14" style="flex:none;line-height:1" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg"><title>Codex</title><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="var(--codex-badge-bg)"></path><path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="url(#lobe-icons-codex-_R_0_)"></path><defs><linearGradient gradientUnits="userSpaceOnUse" id="lobe-icons-codex-_R_0_" x1="12" x2="12" y1="3" y2="21"><stop stop-color="#B1A7FF"></stop><stop offset=".5" stop-color="#7A9DFF"></stop><stop offset="1" stop-color="#3941FF"></stop></linearGradient></defs></svg>
           <span>Codex</span>
         </button>
         <button class="tab-btn" onclick="switchTab('sse')">Raw SSE</button>
@@ -1615,11 +1641,6 @@ export class StreamableHttpTransport {
               <span class="claude-dialog-title">Add custom connector</span>
               <span class="claude-beta-badge">BETA</span>
             </div>
-            <div class="claude-close-btn">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-              </svg>
-            </div>
           </div>
           
           <div class="claude-dialog-desc">
@@ -1652,7 +1673,6 @@ export class StreamableHttpTransport {
           </div>
           
           <div class="claude-dialog-actions">
-            <button class="claude-btn claude-btn-cancel">Cancel</button>
             <button class="claude-btn claude-btn-add">Add</button>
           </div>
         </div>
@@ -1667,11 +1687,6 @@ export class StreamableHttpTransport {
         <div class="chatgpt-dialog-container">
           <div class="chatgpt-dialog-header">
             <span class="chatgpt-dialog-title">New App</span>
-            <div class="chatgpt-close-btn">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-              </svg>
-            </div>
           </div>
           
           <div class="chatgpt-section-label">Icon <span style="font-weight: normal; color: #b4b4b4;">(optional)</span></div>
