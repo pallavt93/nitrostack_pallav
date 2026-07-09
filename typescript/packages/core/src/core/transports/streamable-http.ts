@@ -1030,6 +1030,100 @@ export class StreamableHttpTransport {
       from { opacity: 0; transform: translateY(-4px); }
       to { opacity: 1; transform: translateY(0); }
     }
+
+    /* Modal Styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.2s ease-out;
+    }
+    .modal-overlay.active {
+      opacity: 1;
+    }
+    
+    .modal-content {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 24px;
+      width: 90%;
+      max-width: 640px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(20px);
+      transform: scale(0.95);
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      display: flex;
+      flex-direction: column;
+      max-height: 85vh;
+      overflow: hidden;
+    }
+    .modal-overlay.active .modal-content {
+      transform: scale(1);
+    }
+    
+    .modal-header {
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .modal-title {
+      font-family: var(--font-display);
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text-main);
+      letter-spacing: -0.02em;
+    }
+    
+    .modal-close-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .modal-close-btn:hover {
+      background: rgba(var(--primary-rgb), 0.1);
+      color: var(--text-main);
+    }
+    
+    .modal-body {
+      padding: 2rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+    
+    .modal-tool-description {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }
+    
+    .modal-section-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--primary);
+    }
     
     /* Footer */
     footer {
@@ -1836,15 +1930,12 @@ url = "${mcpEndpoint}"</pre>
               </div>
               <p class="tool-description">${this.escapeHtml(tool.description || 'No description available')}</p>
               ${tool.inputSchema ? `
-                <button class="schema-toggle" onclick="toggleSchema(${idx})">
+                <button class="schema-toggle" onclick="openToolModal(${idx})">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:0.9rem;height:0.9rem;">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" />
                   </svg>
                   <span>View Input Schema</span>
                 </button>
-                <div class="schema-content" id="schema-${idx}">
-                  <pre>${this.escapeHtml(JSON.stringify(tool.inputSchema, null, 2))}</pre>
-                </div>
               ` : ''}
             </div>
           `;
@@ -1947,19 +2038,54 @@ url = "${mcpEndpoint}"</pre>
       });
     }
 
-    // Toggle Schema Visibility
-    function toggleSchema(index) {
-      const content = document.getElementById('schema-' + index);
-      const button = content.previousElementSibling;
-      const span = button.querySelector('span');
+    // Tools data for modal display
+    const toolsData = ${JSON.stringify(tools)};
+
+    function openToolModal(index) {
+      const tool = toolsData[index];
+      if (!tool) return;
       
-      if (content.classList.contains('active')) {
-        content.classList.remove('active');
-        span.innerText = 'View Input Schema';
-      } else {
-        content.classList.add('active');
-        span.innerText = 'Hide Input Schema';
-      }
+      document.getElementById('modal-tool-name').innerText = tool.name;
+      document.getElementById('modal-tool-description').innerText = tool.description || 'No description available.';
+      
+      const schemaPre = document.getElementById('modal-tool-schema');
+      schemaPre.innerText = JSON.stringify(tool.inputSchema || {}, null, 2);
+      
+      const modal = document.getElementById('tool-modal');
+      modal.style.display = 'flex';
+      modal.offsetHeight; // force reflow
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeToolModal(event) {
+      if (event && event.target !== document.getElementById('tool-modal') && event.target.closest('.modal-close-btn') === null) return;
+      
+      const modal = document.getElementById('tool-modal');
+      modal.classList.remove('active');
+      document.body.style.overflow = '';
+      
+      setTimeout(() => {
+        if (!modal.classList.contains('active')) {
+          modal.style.display = 'none';
+        }
+      }, 200);
+    }
+
+    function copyModalSchema() {
+      const el = document.getElementById('modal-tool-schema');
+      navigator.clipboard.writeText(el.innerText).then(() => {
+        const btn = el.parentNode.querySelector('.btn-copy');
+        const originalText = btn.innerText;
+        btn.innerText = 'Copied!';
+        btn.style.background = 'rgba(16, 185, 129, 0.2)';
+        btn.style.borderColor = '#10b981';
+        setTimeout(() => {
+          btn.innerText = originalText;
+          btn.style.background = '';
+          btn.style.borderColor = '';
+        }, 1500);
+      });
     }
 
     // Client-side filtering of tools
@@ -1978,6 +2104,28 @@ url = "${mcpEndpoint}"</pre>
       });
     }
   </script>
+
+  <!-- Tool Details Modal -->
+  <div class="modal-overlay" id="tool-modal" onclick="closeToolModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-tool-name">tool_name</h3>
+        <button class="modal-close-btn" onclick="closeToolModal(event)">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:20px;height:20px;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-tool-description" id="modal-tool-description">Description here...</p>
+        <div class="modal-section-title">Input Schema</div>
+        <div class="code-container" style="margin-top: 0.5rem; max-height: 400px; overflow-y: auto;">
+          <button class="btn-copy" onclick="copyModalSchema()">Copy Schema</button>
+          <pre id="modal-tool-schema" style="color: #38bdf8;"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>`;
   }
