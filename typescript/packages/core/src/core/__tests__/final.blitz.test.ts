@@ -30,7 +30,8 @@ describe('Final Blitz Coverage Tests', () => {
         const port = 3120;
 
         beforeEach(async () => {
-            transport = new StreamableHttpTransport({ port, enableSessions: true });
+            transport = new StreamableHttpTransport({ port });
+            transport.setMcpServerFactory(() => ({ connect: async () => {}, close: async () => {} }) as any);
             await transport.start();
         });
 
@@ -38,57 +39,31 @@ describe('Final Blitz Coverage Tests', () => {
             await transport.close();
         });
 
-        it('should cover setters and close handler', () => {
-            const onMsg = jest.fn();
-            const onClose = jest.fn();
-            const onError = jest.fn();
+        it('should accept an MCP server factory and register custom routes', () => {
+            const factory = jest.fn();
+            transport.setMcpServerFactory(factory as any);
+            expect((transport as any).mcpServerFactory).toBe(factory);
 
-            // @ts-ignore
-            transport.onmessage = onMsg as any;
-            // @ts-ignore
-            transport.onclose = onClose as any;
-            // @ts-ignore
-            transport.onerror = onError as any;
-
-            expect((transport as any).messageHandler).toBe(onMsg);
-            expect((transport as any).closeHandler).toBe(onClose);
-            expect((transport as any).errorHandler).toBe(onError);
-
-            // Trigger error handler manually
-            (transport as any).errorHandler(new Error('test'));
-            expect(onError).toHaveBeenCalled();
+            const handler = jest.fn();
+            transport.on('/custom', handler as any);
+            expect(handler).toBeDefined();
         });
 
-        it('should cover /mcp/message routes and handlePost errors', async () => {
+        it('should serve /mcp/health and reject non-initialize POST without a session', async () => {
             const baseUrl = `http://localhost:${port}/mcp`;
 
-            // GET /mcp/message
-            const res1 = await fetch(`${baseUrl}/message`);
-            expect(res1.status).toBe(200);
+            const health = await fetch(`${baseUrl}/health`);
+            expect(health.status).toBe(200);
+            const healthBody: any = await health.json();
+            expect(healthBody.status).toBe('ok');
 
-            // POST /mcp/message (valid)
-            const res2 = await fetch(`${baseUrl}/message`, {
+            // Non-initialize POST without a session id is rejected with 400
+            const res = await fetch(baseUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ jsonrpc: '2.0', method: 'ping' })
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+                body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })
             });
-            expect([200, 202]).toContain(res2.status);
-
-            // POST /mcp/message (invalid)
-            const res3 = await fetch(`${baseUrl}/message`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ping: true })
-            });
-            expect(res3.status).toBe(400);
-
-            // POST /mcp (invalid jsonrpc version)
-            const res4 = await fetch(baseUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ jsonrpc: '1.0', method: 'ping' })
-            });
-            expect(res4.status).toBe(400);
+            expect(res.status).toBe(400);
         });
 
         it('should cover production documentation and host parsing', async () => {
@@ -119,45 +94,15 @@ describe('Final Blitz Coverage Tests', () => {
             (server as any).mcpServer = {
                 connect: (jest.fn() as any).mockImplementation(() => Promise.resolve()),
                 close: (jest.fn() as any).mockImplementation(() => Promise.resolve()),
-                _requestHandlers: new Map()
             } as any;
 
             await server.start();
             expect((server as any)._transportType).toBe('dual');
 
-            // Test dual-mode message forwarding
+            // The HTTP host is created and a per-session MCP server factory wired in.
             const httpTransport = (server as any)._httpTransport;
-            const mockHandler = jest.fn().mockImplementation(() => Promise.resolve({ result: 'success' }));
-            (server as any).mcpServer._requestHandlers = new Map([['test_method', mockHandler]]);
-
-            const onMsg = (httpTransport as any).messageHandler;
-            await onMsg({ jsonrpc: '2.0', id: 1, method: 'test_method' });
-
-            expect(mockHandler).toHaveBeenCalled();
-
-            await server.stop();
-        });
-
-        it('should handle dual-mode message forwarding errors', async () => {
-            const server = new NitroStackServer({ name: 'DualErrorServer', version: '1' });
-            process.env.MCP_TRANSPORT_TYPE = 'dual';
-            process.env.PORT = '3130';
-            (server as any).mcpServer = {
-                connect: (jest.fn() as any).mockImplementation(() => Promise.resolve()),
-                close: (jest.fn() as any).mockImplementation(() => Promise.resolve()),
-                _requestHandlers: new Map([['fail_method', async () => { throw new Error('Forced failure'); }]])
-            } as any;
-
-            await server.start();
-            const httpTransport = (server as any)._httpTransport;
-            const sendSpy = jest.spyOn(httpTransport, 'send');
-
-            const onMsg = (httpTransport as any).messageHandler;
-            await onMsg({ jsonrpc: '2.0', id: 2, method: 'fail_method' });
-
-            expect(sendSpy).toHaveBeenCalledWith(expect.objectContaining({
-                error: expect.objectContaining({ message: 'Forced failure' })
-            }));
+            expect(httpTransport).toBeDefined();
+            expect((httpTransport as any).mcpServerFactory).toBeInstanceOf(Function);
 
             await server.stop();
         });
@@ -175,13 +120,13 @@ describe('Final Blitz Coverage Tests', () => {
 
             await server.start();
             expect((server as any)._transportType).toBe('http');
+            expect(((server as any)._httpTransport as any).mcpServerFactory).toBeInstanceOf(Function);
 
             await server.stop();
         });
 
         it('should handle start failure and log error', async () => {
-            process.env.PORT = '3127';
-            process.env.MCP_TRANSPORT_TYPE = 'http';
+            process.env.MCP_TRANSPORT_TYPE = 'stdio';
             const server = new NitroStackServer({ name: 'FailServer', version: '1' });
             (server as any).mcpServer = {
                 connect: (jest.fn() as any).mockImplementation(() => Promise.reject(new Error('Connect failed'))),
@@ -192,41 +137,6 @@ describe('Final Blitz Coverage Tests', () => {
 
             await expect(server.start()).rejects.toThrow('Connect failed');
             expect(loggerSpy).toHaveBeenCalledWith('Failed to start server', expect.any(Object));
-        });
-    });
-
-    describe('Replay Logic & Error Paths', () => {
-        it('should cover message replay logic in StreamableHttpTransport', async () => {
-            const transport = new StreamableHttpTransport({ port: 3135, enableSessions: true });
-            await transport.start();
-
-            const sessionId = 'replay-session';
-            const session = {
-                id: sessionId,
-                streams: new Map(),
-                lastActivity: Date.now(),
-                messageQueue: [{ event: 'message', data: { jsonrpc: '2.0', result: 'queued' }, id: 5 }],
-                eventIdCounter: 5
-            };
-            (transport as any).sessions.set(sessionId, session);
-
-            await (transport as any).replayMessages(session, 4);
-            await transport.close();
-        });
-
-        it('should cover legacy message error path', async () => {
-            const transport = new StreamableHttpTransport({ port: 3136 });
-            await transport.start();
-
-            transport.onmessage = (async () => { throw new Error('Legacy error'); }) as any;
-
-            const res = await fetch('http://localhost:3136/mcp/message', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ jsonrpc: '2.0', method: 'test' })
-            });
-            expect(res.status).toBe(500);
-            await transport.close();
         });
     });
 

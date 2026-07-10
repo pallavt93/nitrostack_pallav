@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import { execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs-extra';
+import https from 'https';
 import {
   createHeader,
   createBox,
@@ -38,18 +39,56 @@ interface UpgradeResult {
 }
 
 /**
- * Get the latest version of a package from npm registry
+ * Fetch a package's latest published version from NPM using standard https module.
  */
-function getLatestVersion(packageName: string = '@nitrostack/core'): string {
-  try {
-    const result = execSync(`npm view ${packageName} version`, {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-    return result;
-  } catch {
-    throw new Error(`Failed to fetch latest version for ${packageName} from npm`);
-  }
+export function fetchLatestNpmVersion(packageName: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = `https://registry.npmjs.org/${packageName}/latest`;
+    const req = https.get(url, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'nitrostack-cli-upgrade'
+      },
+      timeout: 5000
+    }, (res) => {
+      if (res.statusCode !== 200) {
+        reject(new Error(`Registry responded with HTTP ${res.statusCode}`));
+        return;
+      }
+      
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      
+      // Handle stream errors
+      res.on('error', (err) => {
+        reject(new Error(`Response stream error: ${err.message}`));
+      });
+      
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.version) {
+            resolve(parsed.version);
+          } else {
+            reject(new Error('Invalid response structure from NPM registry'));
+          }
+        } catch (e) {
+          reject(new Error(`Failed to parse response: ${(e as Error).message}`));
+        }
+      });
+    });
+    
+    req.on('error', (err) => {
+      reject(err);
+    });
+    
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timed out'));
+    });
+  });
 }
 
 /**
@@ -67,16 +106,20 @@ function getCoreVersion(packageJsonPath: string): string | null {
 }
 
 /**
- * Parse version string to extract the actual version number
+ * Parse version string to extract the actual numeric version.
+ *
+ * Strips any leading range operator (^ ~ >= <= > <) and drops the pre-release
+ * suffix (e.g. `-beta.1`) so the dot-separated segments always parse to numbers
+ * instead of producing `NaN` in `compareVersions`.
  */
 function parseVersion(versionString: string): string {
-  return versionString.replace(/^[\^~>=<]+/, '');
+  return versionString.replace(/^[\^~>=<]+/, '').split('-')[0];
 }
 
 /**
  * Compare two version strings
  */
-function compareVersions(v1: string, v2: string): number {
+export function compareVersions(v1: string, v2: string): number {
   const parts1 = parseVersion(v1).split('.').map(Number);
   const parts2 = parseVersion(v2).split('.').map(Number);
 
@@ -92,13 +135,23 @@ function compareVersions(v1: string, v2: string): number {
 }
 
 /**
- * Update all @nitrostack/* versions in package.json
+ * Determine if a dependency refers to a local file or workspace link.
  */
-function updatePackageJson(
+export function isLocalDependency(version: string): boolean {
+  return version.startsWith('file:') ||
+         version.startsWith('link:') ||
+         version.startsWith('workspace:') ||
+         version.startsWith('.') ||
+         version.startsWith('/');
+}
+
+/**
+ * Update all @nitrostack/* versions in package.json using dynamic npm registry fetch
+ */
+async function updatePackageJson(
   packageJsonPath: string,
-  newVersion: string,
   dryRun: boolean
-): UpgradeResult[] {
+): Promise<UpgradeResult[]> {
   if (!fs.existsSync(packageJsonPath)) {
     return [];
   }
@@ -107,28 +160,40 @@ function updatePackageJson(
   const results: UpgradeResult[] = [];
   let hasChanges = false;
 
-  const updateDeps = (deps?: Record<string, string>) => {
+  const updateDeps = async (deps?: Record<string, string>) => {
     if (!deps) return;
-    for (const pkg of Object.keys(deps)) {
+    const promises = Object.keys(deps).map(async (pkg) => {
       if (pkg.startsWith('@nitrostack/')) {
         const currentVersion = deps[pkg];
-        if (compareVersions(currentVersion, newVersion) < 0) {
-          results.push({
-            location: path.basename(path.dirname(packageJsonPath)),
-            packageName: pkg,
-            previousVersion: currentVersion,
-            newVersion: `^${newVersion}`,
-            upgraded: true,
-          });
-          deps[pkg] = `^${newVersion}`;
-          hasChanges = true;
+        
+        // Skip local dependencies entirely
+        if (isLocalDependency(currentVersion)) {
+          return;
+        }
+
+        try {
+          const latestVersion = await fetchLatestNpmVersion(pkg);
+          if (compareVersions(currentVersion, latestVersion) < 0) {
+            results.push({
+              location: path.basename(path.dirname(packageJsonPath)),
+              packageName: pkg,
+              previousVersion: currentVersion,
+              newVersion: `^${latestVersion}`,
+              upgraded: true,
+            });
+            deps[pkg] = `^${latestVersion}`;
+            hasChanges = true;
+          }
+        } catch (error) {
+          console.warn(`\n⚠️  Skipped upgrade check for ${pkg}: ${(error as Error).message}`);
         }
       }
-    }
+    });
+    await Promise.all(promises);
   };
 
-  updateDeps(packageJson.dependencies);
-  updateDeps(packageJson.devDependencies);
+  await updateDeps(packageJson.dependencies);
+  await updateDeps(packageJson.devDependencies);
 
   if (hasChanges && !dryRun) {
     fs.writeJSONSync(packageJsonPath, packageJson, { spaces: 2 });
@@ -176,38 +241,6 @@ export async function upgradeCommand(options: UpgradeOptions): Promise<void> {
     process.exit(1);
   }
 
-  // Fetch latest version
-  const spinner = new NitroSpinner('Checking for updates...').start();
-  let latestVersion: string;
-
-  try {
-    latestVersion = getLatestVersion('@nitrostack/core');
-    spinner.succeed(`Latest version: ${chalk.cyan(latestVersion)}`);
-  } catch (error) {
-    spinner.fail('Failed to fetch latest version');
-    process.exit(1);
-  }
-
-  // Check if already on latest
-  const currentParsedVersion = parseVersion(coreVersion);
-  if (compareVersions(currentParsedVersion, latestVersion) >= 0) {
-    spacer();
-    console.log(createSuccessBox('Already Up to Date', [
-      `Current version: ${currentParsedVersion}`,
-      `Latest version:  ${latestVersion}`,
-    ]));
-    trackEvent('cli_upgrade_completed', {
-      packages_upgraded: 0,
-      from_version: currentParsedVersion,
-      to_version: latestVersion,
-      dry_run: !!options.dryRun,
-      already_current: true,
-    });
-    await shutdownAnalytics();
-    return;
-  }
-
-  const allResults: UpgradeResult[] = [];
   const dryRun = options.dryRun ?? false;
 
   if (dryRun) {
@@ -216,16 +249,18 @@ export async function upgradeCommand(options: UpgradeOptions): Promise<void> {
   }
 
   spacer();
-  log('Upgrading dependencies...', 'info');
+  log('Checking for package updates...', 'info');
   spacer();
 
+  const allResults: UpgradeResult[] = [];
+
   // Upgrade root
-  const rootSpinner = new NitroSpinner('Updating root package.json...').start();
+  const rootSpinner = new NitroSpinner('Checking root package.json...').start();
   try {
-    const results = updatePackageJson(rootPackageJsonPath, latestVersion, dryRun);
+    const results = await updatePackageJson(rootPackageJsonPath, dryRun);
     if (results.length > 0) {
       allResults.push(...results);
-      rootSpinner.succeed(`Root: Updated ${results.length} @nitrostack packages`);
+      rootSpinner.succeed(`Root: Found ${results.length} package update(s)`);
 
       if (!dryRun) {
         const installSpinner = new NitroSpinner('Installing dependencies...').start();
@@ -233,7 +268,7 @@ export async function upgradeCommand(options: UpgradeOptions): Promise<void> {
         installSpinner.succeed('Root dependencies installed');
       }
     } else {
-      rootSpinner.info('Root: All @nitrostack packages are up to date');
+      rootSpinner.info('Root: All @nitrostack packages are up to date (or local references)');
     }
   } catch (error) {
     rootSpinner.fail('Failed to upgrade root');
@@ -242,12 +277,12 @@ export async function upgradeCommand(options: UpgradeOptions): Promise<void> {
 
   // Upgrade widgets if they exist
   if (fs.existsSync(widgetsPackageJsonPath)) {
-    const widgetsSpinner = new NitroSpinner('Updating widgets package.json...').start();
+    const widgetsSpinner = new NitroSpinner('Checking widgets package.json...').start();
     try {
-      const results = updatePackageJson(widgetsPackageJsonPath, latestVersion, dryRun);
+      const results = await updatePackageJson(widgetsPackageJsonPath, dryRun);
       if (results.length > 0) {
         allResults.push(...results);
-        widgetsSpinner.succeed(`Widgets: Updated ${results.length} @nitrostack packages`);
+        widgetsSpinner.succeed(`Widgets: Found ${results.length} package update(s)`);
 
         if (!dryRun) {
           const installSpinner = new NitroSpinner('Installing widget dependencies...').start();
@@ -255,54 +290,64 @@ export async function upgradeCommand(options: UpgradeOptions): Promise<void> {
           installSpinner.succeed('Widget dependencies installed');
         }
       } else {
-        widgetsSpinner.info('Widgets: All @nitrostack packages are up to date');
+        widgetsSpinner.info('Widgets: All @nitrostack packages are up to date (or local references)');
       }
     } catch (error) {
       widgetsSpinner.fail('Failed to upgrade widgets');
+      console.error(error);
     }
   }
 
   // Summary
   spacer();
   if (allResults.length === 0) {
-    log('No packages were upgraded', 'warning');
-  } else {
-    // Unique packages upgraded
-    const uniquePackages = Array.from(new Set(allResults.map(r => r.packageName)));
-    const summaryItems = uniquePackages.map(pkg => {
-      const result = allResults.find(r => r.packageName === pkg)!;
-      return `${pkg}: ${parseVersion(result.previousVersion)} → ${parseVersion(result.newVersion)}`;
-    });
-
-    if (dryRun) {
-      spacer();
-      console.log(createBox([
-        chalk.yellow.bold('Dry run complete'),
-        '',
-        chalk.dim('No changes were made to your project.'),
-        chalk.dim('Run without --dry-run to apply the upgrade.'),
-      ], 'warning'));
-    } else {
-      console.log(createSuccessBox('Upgrade Complete', [
-        ...summaryItems,
-        '',
-        chalk.dim(`Total updates across all packages: ${allResults.length}`)
-      ]));
-      nextSteps([
-        'Review the changes in package.json',
-        'Restart your development server',
-        'Check docs.nitrostack.ai for migration guides',
-      ]);
-    }
-    showFooter();
-
+    console.log(createSuccessBox('Already Up to Date', [
+      'All @nitrostack packages are already running their latest versions.',
+    ]));
     trackEvent('cli_upgrade_completed', {
-      packages_upgraded: allResults.length,
-      from_version: currentParsedVersion,
-      to_version: latestVersion,
+      packages_upgraded: 0,
       dry_run: dryRun,
-      already_current: false,
+      already_current: true,
     });
     await shutdownAnalytics();
+    return;
   }
+
+  // Unique packages upgraded
+  const uniquePackages = Array.from(new Set(allResults.map(r => r.packageName)));
+  const summaryItems = uniquePackages.map(pkg => {
+    const result = allResults.find(r => r.packageName === pkg)!;
+    return `${pkg}: ${parseVersion(result.previousVersion)} → ${parseVersion(result.newVersion)}`;
+  });
+
+  if (dryRun) {
+    spacer();
+    console.log(createBox([
+      chalk.yellow.bold('Dry Run - Proposed Upgrades:'),
+      ...summaryItems.map(item => `  • ${item}`),
+      '',
+      chalk.dim('No changes were made to your project.'),
+      chalk.dim('Run without --dry-run to apply the upgrade.'),
+    ], 'warning'));
+  } else {
+    console.log(createSuccessBox('Upgrade Complete', [
+      ...summaryItems,
+      '',
+      chalk.dim(`Total updates across all packages: ${allResults.length}`)
+    ]));
+    nextSteps([
+      'Review the changes in package.json',
+      'Restart your development server',
+      'Check docs.nitrostack.ai for migration guides',
+    ]);
+  }
+  showFooter();
+
+  trackEvent('cli_upgrade_completed', {
+    packages_upgraded: allResults.length,
+    dry_run: dryRun,
+    already_current: false,
+  });
+  await shutdownAnalytics();
 }
+

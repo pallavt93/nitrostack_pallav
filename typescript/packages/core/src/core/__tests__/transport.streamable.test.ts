@@ -1,206 +1,183 @@
-import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { StreamableHttpTransport } from '../transports/streamable-http.js';
-import http from 'http';
+import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
+import {
+    ListToolsRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 
-describe('StreamableHttpTransport', () => {
+/**
+ * Build a minimal configured MCP server for the host to spin up per session.
+ */
+function makeServerFactory() {
+    return () => {
+        const server = new McpServer(
+            { name: 'test-server', version: '1.2.3' },
+            { capabilities: { tools: { listChanged: true } } },
+        );
+        server.setRequestHandler(ListToolsRequestSchema, async () => ({
+            tools: [
+                { name: 'ping', description: 'ping tool', inputSchema: { type: 'object' } },
+            ],
+        }));
+        return server;
+    };
+}
+
+/**
+ * Read a single JSON-RPC message from a POST response, whether the SDK replied
+ * with a direct JSON body or a (self-terminating) SSE stream.
+ */
+async function readJsonRpc(res: Response): Promise<any> {
+    const contentType = res.headers.get('content-type') || '';
+    const text = await res.text();
+    if (contentType.includes('application/json')) {
+        return JSON.parse(text);
+    }
+    const dataLines = text
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice('data:'.length).trim());
+    return JSON.parse(dataLines[dataLines.length - 1]);
+}
+
+const MCP_ACCEPT = 'application/json, text/event-stream';
+
+describe('StreamableHttpTransport (SDK-delegated host)', () => {
     let transport: StreamableHttpTransport;
     const port = 3060;
     const baseUrl = `http://localhost:${port}/mcp`;
 
     beforeEach(async () => {
-        jest.useFakeTimers();
         transport = new StreamableHttpTransport({
             port,
             host: 'localhost',
-            enableSessions: true,
-            enableCors: true
+            enableCors: true,
         });
+        transport.setMcpServerFactory(makeServerFactory());
         await transport.start();
     });
 
     afterEach(async () => {
         await transport.close();
-        jest.useRealTimers();
     });
 
-    it('should cover documentation page generation directly for coverage', async () => {
-        const st = (transport as any);
+    it('generates the documentation page and escapes HTML', () => {
+        const st = transport as any;
+        st.setServerConfig({ name: 'DocTest', version: '1.0.0', description: 'A test server' });
 
-        // Exercise the logo loading paths by calling it manually
-        st.loadLogo();
-
-        st.setServerConfig({
-            name: 'DocTest',
-            version: '1.0.0',
-            description: 'A test server'
-        });
-
-        st.setToolsCallback(async () => [
-            { name: 'tool1', description: 'd1', inputSchema: {}, widget: true } as any
-        ]);
-
-        // Manually trigger the doc generation to ensure 500 lines are covered
         const html = st.generateDocumentationPage(
             [{ name: 'tool1', description: 'd1', inputSchema: {}, widget: true } as any],
-            'http://localhost:3060/mcp'
+            'http://localhost:3060/mcp',
         );
 
         expect(html).toContain('DocTest');
         expect(html).toContain('1.0.0');
         expect(html).toContain('tool1');
-        expect(html).toContain('Has UI Widget');
-
-        // Exercise escapeHtml
         expect(st.escapeHtml('<script>')).toBe('&lt;script&gt;');
     });
 
-    it('should handle session-based messaging and sessionless send', async () => {
-        const st = (transport as any);
-        const session = {
-            id: 's1',
-            streams: new Map([['str1', { response: { write: jest.fn(), end: jest.fn() }, closed: false, eventIdCounter: 0 }]]),
-            messageQueue: [],
-            lastActivity: Date.now()
-        };
-        st.sessions.set('s1', session);
-
-        // Send request to session-based stream
-        await transport.send({ jsonrpc: '2.0', method: 'req', id: 1 });
-        expect(session.streams.get('str1')!.response.write).toHaveBeenCalled();
-
-        // Send response to session-based stream
-        await transport.send({ jsonrpc: '2.0', result: { ok: true }, id: 1 });
-
-        // Send to sessionless stream
-        const stream2 = { response: { write: jest.fn(), end: jest.fn() }, closed: false, eventIdCounter: 0 };
-        st.activeStreams.set('str2', stream2);
-        await transport.send({ jsonrpc: '2.0', method: 'req2', id: 2 });
-        expect(stream2.response.write).toHaveBeenCalled();
-
-        // Test replayMessages
-        st.replayMessages(session, session.streams.get('str1'), 's1-0');
-    });
-
-    it('should cover initialization, middleware and route handlers', async () => {
-        jest.useRealTimers();
-
-        // POST /mcp (Initialize)
-        const res1 = await fetch(baseUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: 1,
-                method: 'initialize',
-                params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '1' } }
-            })
-        });
-        expect(res1.status).toBe(202);
-        const sessionId = res1.headers.get('Mcp-Session-Id');
-        expect(sessionId).toBeDefined();
-
-        // GET /mcp (SSE)
-        const res2 = await fetch(baseUrl, { headers: { 'Mcp-Session-Id': sessionId!, 'Accept': 'text/event-stream' } });
-        expect(res2.status).toBe(200);
-        await res2.body?.getReader().cancel();
-
-        // DELETE /mcp
-        const res3 = await fetch(baseUrl, { method: 'DELETE', headers: { 'Mcp-Session-Id': sessionId! } });
-        expect(res3.status).toBe(200);
-    });
-
-    it('should handle error paths in POST/GET/DELETE', async () => {
-        jest.useRealTimers();
-
-        // POST invalid json-rpc
-        const res1 = await fetch(baseUrl, { method: 'POST', body: JSON.stringify({ id: 1 }) });
-        expect(res1.status).toBe(400);
-
-        // POST session not found
-        const res2 = await fetch(baseUrl, {
-            method: 'POST',
-            headers: { 'Mcp-Session-Id': 'none', 'Content-Type': 'application/json' },
-            body: JSON.stringify({ jsonrpc: '2.0', method: 'ping' })
-        });
-        expect(res2.status).toBe(404);
-
-        // GET rejects SSE
-        const res3 = await fetch(baseUrl, { headers: { 'Accept': 'image/png' } });
-        expect(res3.status).toBe(405);
-
-        // DELETE missing session
-        const res4 = await fetch(baseUrl, { method: 'DELETE' });
-        expect(res4.status).toBe(400);
-    });
-
-    it('should handle session timeout cleanup', () => {
-        const st = (transport as any);
-        st.options.sessionTimeout = 1;
-        const session = {
-            id: 's-exp',
-            streams: new Map([['str1', { response: { end: jest.fn() }, closed: false }]]),
-            lastActivity: Date.now() - 100000,
-            messageQueue: []
-        };
-        st.sessions.set('s-exp', session);
-
-        jest.advanceTimersByTime(70000); // Trigger cleanup interval
-        expect(st.sessions.has('s-exp')).toBe(false);
-    });
-
-    it('should test environment-specific logic (isLocalhost, options, getApp)', () => {
-        const st = (transport as any);
+    it('detects localhost variants and exposes the Express app', () => {
+        const st = transport as any;
         expect(st.isLocalhost('127.0.0.1')).toBe(true);
         expect(st.isLocalhost('::1')).toBe(true);
         expect(st.isLocalhost('[::1]:3000')).toBe(true);
         expect(st.isLocalhost('localhost:3000')).toBe(true);
         expect(st.isLocalhost('google.com')).toBe(false);
-
         expect(transport.getApp()).toBeDefined();
-
-        // Test constructor default values
-        const st2 = new StreamableHttpTransport({ enableCors: false, enableSessions: false });
-        expect((st2 as any).options.enableSessions).toBe(false);
-        expect((st2 as any).options.enableCors).toBe(false);
     });
 
-    it('should validate origin when CORS is disabled', async () => {
+    it('completes an initialize + tools/list handshake, returning JSON-RPC on the POST', async () => {
+        // 1. initialize
+        const initRes = await fetch(baseUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: MCP_ACCEPT },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                id: 1,
+                method: 'initialize',
+                params: {
+                    protocolVersion: '2025-06-18',
+                    capabilities: {},
+                    clientInfo: { name: 'test-client', version: '1.0.0' },
+                },
+            }),
+        });
+        expect(initRes.status).toBe(200);
+        const sessionId = initRes.headers.get('mcp-session-id');
+        expect(sessionId).toBeTruthy();
+
+        const initMsg = await readJsonRpc(initRes);
+        expect(initMsg.id).toBe(1);
+        expect(initMsg.result.serverInfo.name).toBe('test-server');
+        expect(initMsg.result.protocolVersion).toBeDefined();
+
+        // 2. notifications/initialized
+        const notifRes = await fetch(baseUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: MCP_ACCEPT,
+                'mcp-session-id': sessionId!,
+            },
+            body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+        });
+        expect(notifRes.status).toBe(202);
+        await notifRes.text();
+
+        // 3. tools/list should return the registered tool on the POST response
+        const listRes = await fetch(baseUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: MCP_ACCEPT,
+                'mcp-session-id': sessionId!,
+            },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+        });
+        expect(listRes.status).toBe(200);
+        const listMsg = await readJsonRpc(listRes);
+        expect(listMsg.id).toBe(2);
+        expect(listMsg.result.tools).toHaveLength(1);
+        expect(listMsg.result.tools[0].name).toBe('ping');
+
+        // 4. terminate the session
+        const delRes = await fetch(baseUrl, {
+            method: 'DELETE',
+            headers: { 'mcp-session-id': sessionId! },
+        });
+        expect([200, 204]).toContain(delRes.status);
+    });
+
+    it('rejects a non-initialize POST without a session with 400', async () => {
+        const res = await fetch(baseUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: MCP_ACCEPT },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/list', params: {} }),
+        });
+        expect(res.status).toBe(400);
+        const body: any = await res.json();
+        expect(body.error).toBeDefined();
+    });
+
+    it('validates Origin when CORS is disabled', async () => {
         const secureTransport = new StreamableHttpTransport({ port: 3068, enableCors: false });
+        secureTransport.setMcpServerFactory(makeServerFactory());
         await secureTransport.start();
 
-        const res = await fetch('http://localhost:3068/mcp', {
-            method: 'POST',
-            headers: {
-                'Origin': 'http://malicious.com',
-                'Host': 'localhost:3068',
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ jsonrpc: '2.0', method: 'ping' })
-        });
-        expect(res.status).toBe(403);
-
-        // Valid origin
-        const res2 = await fetch('http://localhost:3068/mcp', {
-            method: 'POST',
-            headers: {
-                'Origin': 'http://localhost:3068',
-                'Host': 'localhost:3068',
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ jsonrpc: '2.0', method: 'ping', id: 1 })
-        });
-        expect(res2.status).toBe(202);
-
-        await secureTransport.close();
-    });
-
-    it('should handle handleDelete failures and sessionless streaming', async () => {
-        // DELETE session not found
-        const res1 = await fetch(baseUrl, { method: 'DELETE', headers: { 'Mcp-Session-Id': 'missing' } });
-        expect(res1.status).toBe(404);
-
-        // GET sessionless
-        const res2 = await fetch(baseUrl, { headers: { 'Accept': 'text/event-stream' } });
-        expect(res2.status).toBe(400);
+        try {
+            const res = await fetch('http://localhost:3068/mcp', {
+                method: 'POST',
+                headers: {
+                    Origin: 'http://malicious.com',
+                    Host: 'localhost:3068',
+                    'Content-Type': 'application/json',
+                    Accept: MCP_ACCEPT,
+                },
+                body: JSON.stringify({ jsonrpc: '2.0', method: 'ping' }),
+            });
+            expect(res.status).toBe(403);
+        } finally {
+            await secureTransport.close();
+        }
     });
 });

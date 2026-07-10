@@ -76,13 +76,70 @@ describe('OAuthModule', () => {
         });
     });
 
+    describe('enforcement gate (required / isAuthRequired)', () => {
+        const originalEnv = process.env.OAUTH_REQUIRED;
+
+        afterEach(() => {
+            if (originalEnv === undefined) {
+                delete process.env.OAUTH_REQUIRED;
+            } else {
+                process.env.OAUTH_REQUIRED = originalEnv;
+            }
+        });
+
+        it('defaults required to false when neither config nor env is set', () => {
+            delete process.env.OAUTH_REQUIRED;
+            OAuthModule.forRoot({
+                resourceUri: 'https://api.example.com',
+                authorizationServers: ['https://auth.example.com']
+            });
+            expect(OAuthModule.getConfig()?.required).toBe(false);
+            expect(OAuthModule.isAuthRequired()).toBe(false);
+        });
+
+        it('resolves required from OAUTH_REQUIRED=true env', () => {
+            process.env.OAUTH_REQUIRED = 'true';
+            OAuthModule.forRoot({
+                resourceUri: 'https://api.example.com',
+                authorizationServers: ['https://auth.example.com']
+            });
+            expect(OAuthModule.getConfig()?.required).toBe(true);
+            expect(OAuthModule.isAuthRequired()).toBe(true);
+        });
+
+        it('treats a non-"true" OAUTH_REQUIRED value as false', () => {
+            process.env.OAUTH_REQUIRED = 'false';
+            OAuthModule.forRoot({
+                resourceUri: 'https://api.example.com',
+                authorizationServers: ['https://auth.example.com']
+            });
+            expect(OAuthModule.isAuthRequired()).toBe(false);
+        });
+
+        it('lets explicit config.required override the env var', () => {
+            process.env.OAUTH_REQUIRED = 'true';
+            OAuthModule.forRoot({
+                resourceUri: 'https://api.example.com',
+                authorizationServers: ['https://auth.example.com'],
+                required: false
+            });
+            expect(OAuthModule.isAuthRequired()).toBe(false);
+        });
+
+        it('isAuthRequired returns false when the module is not configured', () => {
+            (OAuthModule as any).config = null;
+            expect(OAuthModule.isAuthRequired()).toBe(false);
+        });
+    });
+
     describe('validateToken', () => {
         beforeEach(() => {
             OAuthModule.forRoot({
                 resourceUri: 'https://api.example.com',
                 authorizationServers: ['https://auth.example.com'],
                 audience: 'https://api.example.com',
-                issuer: 'https://auth.example.com'
+                issuer: 'https://auth.example.com',
+                allowInsecureTokenDecode: true
             });
         });
 
@@ -184,7 +241,8 @@ describe('OAuthModule', () => {
                 resourceUri: 'https://api.example.com',
                 authorizationServers: ['https://auth.example.com'],
                 audience: 'https://api.example.com',
-                customValidation: () => false
+                customValidation: () => false,
+                allowInsecureTokenDecode: true
             };
 
             const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');

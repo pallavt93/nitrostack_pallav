@@ -79,8 +79,26 @@ Respond to EXACTLY what the user asked - nothing more.`;
         ]
     })
     async flightComparison(input: any, ctx: ExecutionContext) {
+        let ids: string[] = [];
+        if (Array.isArray(input.offerIds)) {
+            ids = input.offerIds;
+        } else if (typeof input.offerIds === 'string') {
+            const trimmed = input.offerIds.trim();
+            if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    ids = Array.isArray(parsed) ? parsed : [parsed];
+                } catch {
+                    ids = trimmed.split(',').map((s: string) => s.trim());
+                }
+            } else {
+                ids = trimmed.split(',').map((s: string) => s.trim());
+            }
+        }
+        ids = ids.filter(Boolean);
+
         const offers = await Promise.all(
-            input.offerIds.map((id: string) => this.duffelService.getOffer(id))
+            ids.map((id: string) => this.duffelService.getOffer(id))
         );
 
         const comparisonData = offers.map((offer: any) => {

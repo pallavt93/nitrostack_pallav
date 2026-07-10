@@ -75,6 +75,63 @@ export interface OAuthModuleConfig {
    * Additional validation logic beyond spec requirements
    */
   customValidation?: (token: unknown) => Promise<boolean> | boolean;
+
+  /**
+   * JWKS URI (RFC 7517)
+   * The authorization server's JWKS endpoint for signature verification
+   */
+  jwksUri?: string;
+
+  /**
+   * Token Cache Seconds
+   * In-memory cache expiration for token introspection (defaults to 300)
+   */
+  tokenCacheSeconds?: number;
+
+  /**
+   * Enable the Dynamic Client Registration endpoint (RFC 7591) at /oauth/v2/register.
+   * Disabled by default. When disabled, the endpoint responds 404 and
+   * `registration_endpoint` is omitted from advertised metadata.
+   * Can also be enabled via the OAUTH_ENABLE_CLIENT_REGISTRATION=true env var.
+   */
+  enableClientRegistration?: boolean;
+
+  /**
+   * Static client id returned by the registration endpoint.
+   * Falls back to the OAUTH_CLIENT_ID environment variable. No literal default.
+   */
+  staticClientId?: string;
+
+  /**
+   * Static client secret returned by the registration endpoint.
+   * Falls back to the OAUTH_CLIENT_SECRET environment variable. No literal default.
+   */
+  staticClientSecret?: string;
+
+  /**
+   * Allow the insecure, signature-less JWT decode fallback in `validateToken`
+   * when neither `tokenIntrospectionEndpoint` nor `jwksUri` is configured.
+   *
+   * Disabled by default: without a configured verifier, tokens are rejected
+   * (fail closed). Only enable for local development or tests where unsigned
+   * tokens are intentionally used. NEVER enable in production.
+   */
+  allowInsecureTokenDecode?: boolean;
+
+  /**
+   * Whether OAuth authentication is enforced.
+   *
+   * Resolved from the `OAUTH_REQUIRED` environment variable when not set
+   * explicitly, and defaults to `false` (dev-friendly). When `false`, the OAuth
+   * module and its discovery endpoints stay configured, but requests are NOT
+   * required to carry a valid token (protected endpoints are reachable openly).
+   *
+   * When `true`, auth is enforced (fail-closed). If no token verifier
+   * (`jwksUri` or `tokenIntrospectionEndpoint`) is configured, the server still
+   * starts and logs a warning, but all protected requests are rejected until a
+   * verifier is configured.
+   */
+  required?: boolean;
 }
 
 /**
@@ -121,6 +178,8 @@ import { Injectable, Inject } from './di/injectable.decorator.js';
 import { NitroStackServer } from './server.js';
 import { Logger } from './types.js';
 import { DiscoveryHttpServer, DiscoveryServerOptions } from './transports/discovery-http-server.js';
+import { createAuthMiddleware } from '../auth/middleware.js';
+import { validateToken as authValidateToken } from '../auth/token-validation.js';
 
 /**
  * OAuth discovery info that can be communicated to clients
@@ -138,23 +197,260 @@ export interface OAuthDiscoveryInfo {
   scopesSupported?: string[];
 }
 
+/** Authorization-server metadata document (RFC 8414 / OIDC discovery). */
+type UpstreamMetadata = Record<string, unknown> & { registration_endpoint?: string };
+
+/** Minimal request shape shared by the discovery/registration handlers. */
+interface DiscoveryRequest {
+  method?: string;
+  headers?: Record<string, string | string[] | undefined>;
+  body?: unknown;
+}
+
+/** Minimal response shape shared by the discovery/registration handlers. */
+interface DiscoveryResponse {
+  writeHead: (status: number, headers: Record<string, string>) => void;
+  end: (data: string) => void;
+}
+
 @Injectable()
 export class OAuthModule {
   private static config: OAuthModuleConfig | null = null;
   private static discoveryInfo: OAuthDiscoveryInfo | null = null;
   private discoveryServer: DiscoveryHttpServer | null = null;
 
-  private wellKnownHandler = (req: unknown, res: { writeHead: (status: number, headers: Record<string, string>) => void; end: (data: string) => void }) => {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      issuer: this.config.issuer,
-      token_endpoint: `${this.config.authorizationServers[0]}/oauth/token`,
-      // Add other metadata as needed
-    }));
+  // Cache of upstream authorization-server metadata to avoid re-fetching on every request.
+  // `data` is null for a (short-lived) negative cache entry.
+  private static discoveryMetadataCache = new Map<string, { data: UpstreamMetadata | null; expires: number }>();
+  // In-flight fetches, keyed by auth server, to de-duplicate concurrent cache misses.
+  private static discoveryMetadataInflight = new Map<string, Promise<UpstreamMetadata | null>>();
+
+  /** Max time to wait for an upstream metadata document before giving up. */
+  private static readonly UPSTREAM_FETCH_TIMEOUT_MS = 4000;
+  /** How long to remember that an upstream lookup failed, to avoid refetch storms. */
+  private static readonly NEGATIVE_CACHE_TTL_MS = 30_000;
+
+  private async fetchUpstreamMetadata(authServer: string): Promise<UpstreamMetadata | null> {
+    const now = Date.now();
+    const cached = OAuthModule.discoveryMetadataCache.get(authServer);
+    if (cached && cached.expires > now) {
+      return cached.data;
+    }
+
+    // De-duplicate concurrent cache-miss fetches for the same authorization server.
+    const inflight = OAuthModule.discoveryMetadataInflight.get(authServer);
+    if (inflight) {
+      return inflight;
+    }
+
+    const fetchPromise = (async (): Promise<UpstreamMetadata | null> => {
+      let metadata: UpstreamMetadata | null = null;
+      for (const suffix of ['/.well-known/openid-configuration', '/.well-known/oauth-authorization-server']) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), OAuthModule.UPSTREAM_FETCH_TIMEOUT_MS);
+        try {
+          const response = await fetch(`${authServer}${suffix}`, { signal: controller.signal });
+          if (response.ok) {
+            metadata = (await response.json()) as UpstreamMetadata;
+            break;
+          }
+        } catch (e) {
+          this.logger.debug(`OAuthModule: upstream metadata fetch failed for ${authServer}${suffix}`, {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+
+      const positiveTtlMs = (this.config.tokenCacheSeconds ?? 300) * 1000;
+      OAuthModule.discoveryMetadataCache.set(authServer, {
+        data: metadata,
+        expires: Date.now() + (metadata ? positiveTtlMs : OAuthModule.NEGATIVE_CACHE_TTL_MS),
+      });
+      return metadata;
+    })();
+
+    OAuthModule.discoveryMetadataInflight.set(authServer, fetchPromise);
+    try {
+      return await fetchPromise;
+    } finally {
+      OAuthModule.discoveryMetadataInflight.delete(authServer);
+    }
+  }
+
+  private buildBaseUrl(req: DiscoveryRequest): string {
+    // Prefer the configured, trusted resourceUri origin so advertised URLs are
+    // not derived from client-controlled Host / X-Forwarded-Proto headers
+    // (host-header injection). Fall back to request headers only if resourceUri
+    // is missing or unparseable.
+    try {
+      if (this.config.resourceUri) {
+        return new URL(this.config.resourceUri).origin;
+      }
+    } catch {
+      // fall through to header-derived base
+    }
+
+    const reqHeaders = req?.headers ?? {};
+    const rawHost = reqHeaders.host;
+    const host = (Array.isArray(rawHost) ? rawHost[0] : rawHost) || 'localhost:3000';
+    const rawProto = reqHeaders['x-forwarded-proto'];
+    let proto = Array.isArray(rawProto) ? rawProto[0] : rawProto;
+    if (!proto) {
+      if (host.includes('localhost') || host.includes('127.0.0.1')) {
+        proto = 'http';
+      } else {
+        proto = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+      }
+    }
+    return `${proto}://${host}`;
+  }
+
+  private wellKnownHandler = async (req: DiscoveryRequest, res: DiscoveryResponse) => {
+    const headers = { 
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization',
+    };
+
+    const registrationEndpoint = this.isClientRegistrationEnabled()
+      ? `${this.buildBaseUrl(req)}/oauth/v2/register`
+      : undefined;
+
+    try {
+      const authServer = this.config.authorizationServers[0];
+      const upstream = await this.fetchUpstreamMetadata(authServer);
+
+      if (upstream) {
+        // Clone before mutating so the cached object stays pristine
+        const metadata = { ...upstream };
+        // Inject registration_endpoint to satisfy strict client schema validation (Cursor/OpenAI)
+        if (registrationEndpoint && !metadata.registration_endpoint) {
+          metadata.registration_endpoint = registrationEndpoint;
+        }
+        res.writeHead(200, headers);
+        res.end(JSON.stringify(metadata));
+        return;
+      }
+    } catch (err) {
+      this.logger.debug('OAuthModule: failed to serve upstream authorization-server metadata; using fallback', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Fallback compliant with RFC 8414 / OIDC metadata schema
+    const fallbackMetadata: Record<string, unknown> = {
+      issuer: this.config.issuer || this.config.authorizationServers[0],
+      authorization_endpoint: `${this.config.authorizationServers[0]}/oauth/v2/authorize`,
+      token_endpoint: `${this.config.authorizationServers[0]}/oauth/v2/token`,
+      introspection_endpoint: this.config.tokenIntrospectionEndpoint || `${this.config.authorizationServers[0]}/oauth/v2/introspect`,
+      jwks_uri: this.config.jwksUri || `${this.config.authorizationServers[0]}/oauth/v2/keys`,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code', 'client_credentials', 'refresh_token'],
+      subject_types_supported: ['public'],
+      id_token_signing_alg_values_supported: ['RS256'],
+      code_challenge_methods_supported: ['S256'],
+    };
+    if (registrationEndpoint) {
+      fallbackMetadata.registration_endpoint = registrationEndpoint;
+    }
+
+    res.writeHead(200, headers);
+    res.end(JSON.stringify(fallbackMetadata));
   };
 
-  private resourceMetadataHandler = (req: unknown, res: { writeHead: (status: number, headers: Record<string, string>) => void; end: (data: string) => void }) => {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+  /**
+   * Whether the static Dynamic Client Registration endpoint is enabled.
+   * Requires explicit opt-in AND a configured client id (never a literal default).
+   */
+  private isClientRegistrationEnabled(): boolean {
+    const enabled = this.config.enableClientRegistration === true
+      || process.env.OAUTH_ENABLE_CLIENT_REGISTRATION === 'true';
+    const clientId = this.config.staticClientId || process.env.OAUTH_CLIENT_ID;
+    return enabled && !!clientId;
+  }
+
+  private registrationHandler = async (
+    req: any,
+    res: DiscoveryResponse
+  ) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization',
+    };
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200, headers);
+      res.end('');
+      return;
+    }
+
+    // Registration is opt-in. Without explicit config + a configured client id we
+    // must not hand out any client credentials.
+    if (!this.isClientRegistrationEnabled()) {
+      res.writeHead(404, headers);
+      res.end(JSON.stringify({ error: 'not_found', error_description: 'Client registration is not enabled' }));
+      return;
+    }
+
+    // Read and parse request body if not already parsed (for raw http.IncomingMessage)
+    let body: any = {};
+    if (req.body && typeof req.body === 'object') {
+      body = req.body;
+    } else {
+      try {
+        const buffers: Buffer[] = [];
+        for await (const chunk of req) {
+          buffers.push(chunk as Buffer);
+        }
+        const data = Buffer.concat(buffers).toString();
+        if (data) {
+          body = JSON.parse(data);
+        }
+      } catch (e) {
+        this.logger.debug('OAuthModule: failed to parse client registration request body', {
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    // Client credentials come strictly from configuration / environment. No literal defaults.
+    const clientId = this.config.staticClientId || process.env.OAUTH_CLIENT_ID!;
+    const clientSecret = this.config.staticClientSecret || process.env.OAUTH_CLIENT_SECRET || '';
+
+    const responsePayload = {
+      client_id: clientId,
+      client_secret: clientSecret,
+      client_id_issued_at: Math.floor(Date.now() / 1000),
+      client_secret_expires_at: 0,
+      grant_types: body.grant_types || ['authorization_code', 'refresh_token'],
+      response_types: body.response_types || ['code'],
+      token_endpoint_auth_method: body.token_endpoint_auth_method || (clientSecret ? 'client_secret_post' : 'none'),
+      redirect_uris: body.redirect_uris || [],
+    };
+
+    res.writeHead(200, headers);
+    res.end(JSON.stringify(responsePayload));
+  };
+
+  private resourceMetadataHandler = (req: DiscoveryRequest, res: DiscoveryResponse) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization',
+    };
+
+    if (req?.method === 'OPTIONS') {
+      res.writeHead(200, headers);
+      res.end('');
+      return;
+    }
+
     // RFC 9728 - Protected Resource Metadata format
     const metadata: { resource: string; authorization_servers: string[]; scopes_supported?: string[] } = {
       resource: this.config.resourceUri,
@@ -166,6 +462,7 @@ export class OAuthModule {
       metadata.scopes_supported = this.config.scopesSupported;
     }
 
+    res.writeHead(200, headers);
     res.end(JSON.stringify(metadata));
   };
 
@@ -187,20 +484,52 @@ export class OAuthModule {
    * Priority: OAUTH_DISCOVERY_PORT > MCP_SERVER_PORT > PORT > config > 3005
    */
   private getPreferredPort(): number {
-    if (process.env.OAUTH_DISCOVERY_PORT) {
-      return parseInt(process.env.OAUTH_DISCOVERY_PORT);
+    const parsePort = (value: string | undefined): number | null => {
+      if (!value) return null;
+      const parsed = parseInt(value, 10);
+      return Number.isNaN(parsed) ? null : parsed;
+    };
+
+    return (
+      parsePort(process.env.OAUTH_DISCOVERY_PORT) ??
+      parsePort(process.env.MCP_SERVER_PORT) ??
+      parsePort(process.env.PORT) ??
+      this.config.http?.port ??
+      3005
+    );
+  }
+
+  /**
+   * Emit a clear, one-time startup log describing the current enforcement mode,
+   * so a misconfigured or intentionally-open server is obvious in the logs.
+   */
+  private logEnforcementMode(): void {
+    const hasVerifier = !!this.config.jwksUri || !!this.config.tokenIntrospectionEndpoint;
+
+    if (!this.config.required) {
+      this.logger.warn(
+        'OAuthModule: authentication is NOT enforced (OAUTH_REQUIRED is not "true"). ' +
+        'Protected endpoints are reachable without a token. ' +
+        'Set OAUTH_REQUIRED=true (and configure JWKS_URI or INTROSPECTION_ENDPOINT) before deploying.'
+      );
+      return;
     }
-    if (process.env.MCP_SERVER_PORT) {
-      return parseInt(process.env.MCP_SERVER_PORT);
+
+    if (!hasVerifier) {
+      this.logger.warn(
+        'OAuthModule: OAUTH_REQUIRED is enabled but no token verifier is configured ' +
+        '(set JWKS_URI or INTROSPECTION_ENDPOINT). The server will start, but ALL ' +
+        'authenticated requests will be rejected (fail-closed) until a verifier is configured.'
+      );
+      return;
     }
-    if (process.env.PORT) {
-      return parseInt(process.env.PORT);
-    }
-    return this.config.http?.port || 3005;
+
+    this.logger.info('OAuthModule: authentication is enforced (OAUTH_REQUIRED=true) with a configured token verifier.');
   }
 
   public async start() {
     this.logger.info('OAuthModule: start method called');
+    this.logEnforcementMode();
     const transportType = (this.server as any)._transportType;
     const preferredPort = this.getPreferredPort();
 
@@ -229,9 +558,38 @@ export class OAuthModule {
     } else {
       this.logger.info(`OAuthModule: Running in ${transportType} mode, registering handlers with main server`);
       // In http or dual mode, register the handlers with the main server
-      const httpTransport = (this.server as any)._httpTransport;
+      const httpTransport = this.server.getHttpTransport();
       if (httpTransport) {
-        this.registerDiscoveryHandlers(httpTransport);
+        this.registerDiscoveryHandlers(httpTransport as any);
+
+        // Retrieve Express app and register auth middleware BEFORE routes are compiled.
+        // Enforcement is gated on `required`: when auth is not enforced, we leave the
+        // discovery endpoints in place but do not mount the token-validating middleware.
+        const app = httpTransport.getApp?.();
+        if (app && this.config.required) {
+          const authMiddleware = createAuthMiddleware({
+            resourceUri: this.config.resourceUri,
+            authorizationServers: this.config.authorizationServers,
+            scopesSupported: this.config.scopesSupported,
+            tokenIntrospectionEndpoint: this.config.tokenIntrospectionEndpoint,
+            tokenIntrospectionClientId: this.config.tokenIntrospectionClientId,
+            tokenIntrospectionClientSecret: this.config.tokenIntrospectionClientSecret,
+            audience: this.config.audience,
+            issuer: this.config.issuer,
+            jwksUri: this.config.jwksUri,
+            tokenCacheSeconds: this.config.tokenCacheSeconds,
+          });
+          const basePath = this.config.http?.basePath || '/mcp';
+          // Express 4 `app.use(basePath, ...)` already matches basePath and all
+          // of its subpaths, so a separate `${basePath}/*` mount is redundant.
+          app.use(basePath, authMiddleware);
+          app.use('/sse', authMiddleware);
+          app.use('/mcp/messages', authMiddleware);
+          this.logger.info(`OAuthModule: Registered auth middleware on ${basePath} (and subpaths), /sse, and /mcp/messages`);
+        } else if (app && !this.config.required) {
+          this.logger.info('OAuthModule: auth enforcement disabled (OAUTH_REQUIRED not set); skipping auth middleware');
+        }
+
         // In HTTP mode, use the configured port
         this.updateDiscoveryInfo(preferredPort);
       } else {
@@ -297,6 +655,9 @@ export class OAuthModule {
   private registerDiscoveryHandlers(server: DiscoveryHttpServer | { on: (path: string, handler: unknown) => void }) {
     server.on('/.well-known/oauth-authorization-server', this.wellKnownHandler);
     server.on('/.well-known/oauth-protected-resource', this.resourceMetadataHandler);
+    if (this.isClientRegistrationEnabled()) {
+      server.on('/oauth/v2/register', this.registrationHandler);
+    }
   }
 
   /**
@@ -320,17 +681,40 @@ export class OAuthModule {
       throw new Error('OAuthModule: at least one authorizationServer is required');
     }
 
-    // Set default audience to resourceUri if not provided
-    if (!config.audience) {
-      config.audience = config.resourceUri;
+    // Clone so env-derived defaults never mutate the caller's object.
+    const resolved: OAuthModuleConfig = { ...config };
+
+    // Resolve defaults from environment variables
+    if (!resolved.jwksUri && process.env.JWKS_URI) {
+      resolved.jwksUri = process.env.JWKS_URI;
     }
 
-    this.config = config;
+    if (!resolved.audience) {
+      resolved.audience = process.env.TOKEN_AUDIENCE || resolved.resourceUri;
+    }
+
+    if (!resolved.issuer && process.env.TOKEN_ISSUER) {
+      resolved.issuer = process.env.TOKEN_ISSUER;
+    }
+
+    // Enforcement gate: explicit config wins, otherwise OAUTH_REQUIRED env, default false.
+    resolved.required = config.required ?? (process.env.OAUTH_REQUIRED === 'true');
+
+    // Eager URL format checks
+    if (resolved.jwksUri) {
+      try {
+        new URL(resolved.jwksUri);
+      } catch (err: any) {
+        throw new Error(`OAuthModule: Invalid configuration value for jwksUri: ${err.message}`);
+      }
+    }
+
+    this.config = resolved;
 
     return {
       module: OAuthModule,
       providers: [
-        { provide: 'OAUTH_CONFIG', useValue: config }
+        { provide: 'OAUTH_CONFIG', useValue: resolved }
       ],
     };
   }
@@ -340,6 +724,16 @@ export class OAuthModule {
    */
   static getConfig(): OAuthModuleConfig | null {
     return this.config;
+  }
+
+  /**
+   * Whether OAuth authentication is enforced.
+   *
+   * Returns `false` when the module is unconfigured or `required` is not `true`,
+   * in which case protected endpoints are reachable without a token.
+   */
+  static isAuthRequired(): boolean {
+    return this.config?.required === true;
   }
 
   /**
@@ -377,28 +771,53 @@ export class OAuthModule {
         // If header decode fails, continue with normal validation
       }
 
-      // If introspection endpoint is configured, use it
-      if (this.config.tokenIntrospectionEndpoint) {
-        return await this.introspectToken(token);
+      // If introspection or JWKS is configured, delegate to token-validation.ts pipeline
+      if (this.config.tokenIntrospectionEndpoint || this.config.jwksUri) {
+        const result = await authValidateToken(token, this.config);
+
+        if (!result.valid || !result.introspection) {
+          return { valid: false, error: result.error || 'Invalid token' };
+        }
+
+        // Custom validation
+        if (this.config.customValidation) {
+          const customValid = await this.config.customValidation(result.introspection);
+          if (!customValid) {
+            return { valid: false, error: 'Custom validation failed' };
+          }
+        }
+
+        return { valid: true, payload: result.introspection as unknown as Record<string, unknown> };
       }
 
-      // For JWT tokens without introspection, decode and validate
-      // Note: In production, you should validate JWT signature
+      // No cryptographic verifier configured. Fail closed unless the caller has
+      // explicitly opted into the insecure, signature-less decode fallback.
+      if (!this.config.allowInsecureTokenDecode) {
+        return {
+          valid: false,
+          error: 'No token validation method configured. Set tokenIntrospectionEndpoint or jwksUri (or enable allowInsecureTokenDecode for local development).',
+        };
+      }
+
+      // Insecure fallback: decode token directly WITHOUT signature verification.
+      // Only reachable when allowInsecureTokenDecode is true.
       const payload = this.decodeToken(token);
 
       if (!payload) {
         return { valid: false, error: 'Invalid token format' };
       }
 
-      // Validate audience (RFC 8707 - critical for security)
-      if (payload.aud) {
-        const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-        if (!audiences.includes(this.config.audience!)) {
-          return {
-            valid: false,
-            error: `Token audience mismatch. Expected: ${this.config.audience}, Got: ${audiences.join(', ')}`,
-          };
-        }
+      // Validate audience (RFC 8707 - critical for security). Fail closed when
+      // the token carries no audience claim.
+      if (!payload.aud) {
+        return { valid: false, error: 'Token missing required audience (aud) claim' };
+      }
+      const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+      if (!audiences.includes(this.config.audience!)) {
+        return {
+          valid: false,
+          error: `Token audience mismatch. Expected: ${this.config.audience}, Got: ${audiences.join(', ')}`,
+        };
       }
 
       // Validate issuer
@@ -427,67 +846,6 @@ export class OAuthModule {
 
     } catch (error: unknown) {
       return { valid: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  }
-
-  /**
-   * Introspect token using RFC 7662
-   * @private
-   */
-  private static async introspectToken(token: string): Promise<{
-    valid: boolean;
-    payload?: Record<string, unknown>;
-    error?: string;
-  }> {
-    if (!this.config?.tokenIntrospectionEndpoint) {
-      return { valid: false, error: 'Introspection endpoint not configured' };
-    }
-
-    try {
-      const auth = Buffer.from(
-        `${this.config.tokenIntrospectionClientId}:${this.config.tokenIntrospectionClientSecret}`
-      ).toString('base64');
-
-      const response = await fetch(this.config.tokenIntrospectionEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Authorization': `Basic ${auth}`,
-        },
-        body: new URLSearchParams({
-          token: token,
-          token_type_hint: 'access_token',
-        }),
-      });
-
-      if (!response.ok) {
-        return {
-          valid: false,
-          error: `Introspection failed: ${response.status} ${response.statusText}`,
-        };
-      }
-
-      const result = await response.json() as { active?: boolean; aud?: string | string[] };
-
-      if (!result.active) {
-        return { valid: false, error: 'Token is not active' };
-      }
-
-      // Validate audience from introspection response
-      if (result.aud) {
-        const audiences = Array.isArray(result.aud) ? result.aud : [result.aud];
-        if (!audiences.includes(this.config.audience!)) {
-          return {
-            valid: false,
-            error: `Token audience mismatch. Expected: ${this.config.audience}`,
-          };
-        }
-      }
-
-      return { valid: true, payload: result as Record<string, unknown> };
-
-    } catch (error: unknown) {
-      return { valid: false, error: `Introspection error: ${error instanceof Error ? error.message : String(error)}` };
     }
   }
 

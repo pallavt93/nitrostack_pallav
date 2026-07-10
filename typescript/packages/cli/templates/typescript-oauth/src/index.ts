@@ -28,26 +28,24 @@ async function bootstrap() {
   try {
     console.error('🔐 Starting Calculator MCP Server with OAuth 2.1...\\n');
 
-    // Validate required environment variables for OAuth
-    const requiredEnvVars = ['RESOURCE_URI', 'AUTH_SERVER_URL'];
-    const missing = requiredEnvVars.filter(v => !process.env[v]);
-
-    if (missing.length > 0) {
-      console.error('❌ Missing required OAuth environment variables:');
-      missing.forEach(v => console.error(`   - ${v}`));
-      console.error('\\n💡 Copy .env.example to .env and configure your OAuth provider');
-      console.error('   Or check the test-oauth/.env for reference\\n');
-      process.exit(1);
+    // Validate required environment variables for OAuth, set defaults if missing
+    if (!process.env.RESOURCE_URI || !process.env.AUTH_SERVER_URL) {
+      console.error('⚠️  Warning: Missing RESOURCE_URI or AUTH_SERVER_URL environment variables.');
+      console.error('   Defaulting to local test endpoints. Copy .env.example to .env to configure.\n');
+      process.env.RESOURCE_URI = process.env.RESOURCE_URI || 'http://localhost:3000';
+      process.env.AUTH_SERVER_URL = process.env.AUTH_SERVER_URL || 'http://localhost:8080/auth';
     }
 
     // Create the MCP application
     const server = await McpApplicationFactory.create(AppModule);
 
+    const authEnforced = process.env.OAUTH_REQUIRED === 'true';
     console.error('✅ OAuth 2.1 Module configured');
     console.error(`   Resource URI: ${process.env.RESOURCE_URI}`);
     console.error(`   Auth Server: ${process.env.AUTH_SERVER_URL}`);
     console.error(`   Scopes: read, write, admin`);
-    console.error(`   Audience: ${process.env.TOKEN_AUDIENCE || process.env.RESOURCE_URI}\\n`);
+    console.error(`   Audience: ${process.env.TOKEN_AUDIENCE || process.env.RESOURCE_URI}`);
+    console.error(`   Enforcement: ${authEnforced ? 'ON (OAUTH_REQUIRED=true)' : 'OFF (dev mode — set OAUTH_REQUIRED=true to enforce)'}\\n`);
 
     // Start the server
     await server.start();

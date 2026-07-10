@@ -47,6 +47,26 @@ export function createAuthMiddleware(config: McpAuthConfig): RequestHandler {
 
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // Bypass auth only for:
+      // - CORS preflight (OPTIONS)
+      // - OAuth discovery documents under /.well-known/*
+      // - JSON-RPC discovery methods (initialize + listing methods).
+      // Listing methods are intentionally left unauthenticated so MCP clients can
+      // enumerate capabilities before completing an OAuth flow. Execution methods
+      // such as `tools/call` are NOT bypassed and still require a valid token.
+      const method = req.body?.method;
+      const isPreflight = req.method === 'OPTIONS';
+      const isWellKnown = (req.path || '').startsWith('/.well-known/');
+      const isDiscoveryMethod =
+        method === 'initialize' ||
+        method === 'tools/list' ||
+        method === 'resources/list' ||
+        method === 'prompts/list';
+
+      if (isPreflight || isWellKnown || isDiscoveryMethod) {
+        return next();
+      }
+
       // 1. Extract Bearer token from Authorization header
       const authHeader = req.headers.authorization;
       const token = extractBearerToken(authHeader);

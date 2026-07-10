@@ -36,6 +36,13 @@ import { SystemHealthCheck } from './health/system.health.js';
 
     // Enable OAuth 2.1 authentication
     OAuthModule.forRoot({
+      // Whether OAuth is enforced. Defaults to false (dev-friendly): the server
+      // runs out-of-the-box and protected endpoints are reachable without a token.
+      // Set OAUTH_REQUIRED=true to enforce auth (fail-closed). When enforced but no
+      // verifier (JWKS_URI / INTROSPECTION_ENDPOINT) is configured, the server still
+      // starts and warns, but rejects protected requests until one is configured.
+      required: process.env.OAUTH_REQUIRED === 'true',
+
       // Resource URI - YOUR MCP server's public URL
       // This is used for token audience binding (RFC 8707)
       // CRITICAL: Tokens must be issued specifically for this URI

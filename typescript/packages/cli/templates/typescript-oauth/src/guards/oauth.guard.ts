@@ -41,6 +41,25 @@ export class OAuthGuard implements Guard {
     } else if (metaToken) {
       token = metaToken as string;
     }
+
+    // Enforcement gate: when OAuth is not required (OAUTH_REQUIRED not "true"),
+    // do not reject. Best-effort: if a valid token happens to be present, attach
+    // its identity; otherwise allow the request through unauthenticated.
+    if (!OAuthModule.isAuthRequired()) {
+      if (token) {
+        const result = await OAuthModule.validateToken(token);
+        if (result.valid) {
+          const payload = result.payload as OAuthTokenPayload;
+          context.auth = {
+            subject: payload.sub,
+            scopes: this.extractScopes(payload),
+            clientId: payload.client_id,
+            tokenPayload: payload,
+          };
+        }
+      }
+      return true;
+    }
     
     if (!token) {
       throw new Error(

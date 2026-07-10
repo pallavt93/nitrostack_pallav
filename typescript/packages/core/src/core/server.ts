@@ -1,7 +1,7 @@
 import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import type { Express } from 'express';
+import type { Express, Response } from 'express';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   CallToolRequestSchema,
@@ -67,35 +67,26 @@ interface ModuleInstance {
 interface HttpTransport {
   start(): Promise<void>;
   close(): Promise<void>;
-  send(message: JsonRpcResponse): Promise<void>;
-  onmessage?: (message: JsonRpcRequest) => Promise<void>;
+  /** Provide the factory used to build a configured MCP server per /mcp session. */
+  setMcpServerFactory?(factory: () => McpServer): void;
+  setLegacySseHandler?(handler: (req: unknown, res: Response) => Promise<void>): void;
   setToolsCallback?(callback: () => Promise<unknown[]>): void;
   setServerConfig?(config: { name: string; version: string; description?: string }): void;
   /** StreamableHttpTransport exposes the Express app for extra routes (legacy SDK SSE). */
   getApp?(): Express;
 }
 
-/**
- * JSON-RPC request structure
- */
-interface JsonRpcRequest {
-  jsonrpc: '2.0';
-  id?: string | number | null;
-  method?: string;
-  params?: Record<string, unknown>;
-}
-
-/**
- * JSON-RPC response structure
- */
-interface JsonRpcResponse {
-  jsonrpc: '2.0';
-  id: string | number | null;
-  result?: unknown;
-  error?: {
-    code: number;
-    message: string;
-    data?: unknown;
+/** Optional Streamable HTTP session limits from environment variables. */
+function getStreamableHttpEnvOptions(): { maxSessions?: number; sessionTimeout?: number } {
+  const maxSessions = process.env.MCP_MAX_SESSIONS
+    ? parseInt(process.env.MCP_MAX_SESSIONS, 10)
+    : undefined;
+  const sessionTimeout = process.env.MCP_SESSION_TIMEOUT_MS
+    ? parseInt(process.env.MCP_SESSION_TIMEOUT_MS, 10)
+    : undefined;
+  return {
+    ...(maxSessions !== undefined && !Number.isNaN(maxSessions) ? { maxSessions } : {}),
+    ...(sessionTimeout !== undefined && !Number.isNaN(sessionTimeout) ? { sessionTimeout } : {}),
   };
 }
 
@@ -144,6 +135,13 @@ export class NitroStackServer {
       name: 'nitrostack-server',
       version: '1.0.0',
     };
+
+    // Register itself in DI container so modules can inject the server.
+    // NOTE: DIContainer is a process-wide singleton, so this assumes a single
+    // NitroStackServer instance per process. Multiple instances would overwrite
+    // each other's registration here.
+    DIContainer.getInstance().registerValue(NitroStackServer, this);
+    DIContainer.getInstance().registerValue('NitroStackServer', this);
 
     this.logger = createLogger({
       level: this.config.logging?.level || 'info',
@@ -196,9 +194,65 @@ export class NitroStackServer {
   };
 
   /**
+   * Build a fresh MCP server instance wired with all of this application's
+   * tool/resource/prompt handlers. Used for transports that require their own
+   * server instance (legacy SSE sessions, official Streamable HTTP sessions),
+   * since a single SDK server can only be connected to one transport at a time.
+   */
+  public createConfiguredMcpServer(): McpServer {
+    const mcp = new McpServer(
+      {
+        name: this.config.name,
+        version: this.config.version,
+      },
+      NitroStackServer.mcpServerOptions,
+    );
+    this.setupHandlersOn(mcp);
+    return mcp;
+  }
+
+  /**
    * SDK-compatible legacy HTTP+SSE: GET /sse (SSEServerTransport) and POST /mcp/messages?sessionId=.
    * Streamable HTTP stays on GET/POST /mcp.
    */
+  private async startLegacySdkSseSession(res: Response, messagesPath: string): Promise<void> {
+    try {
+      const sessionMcp = this.createConfiguredMcpServer();
+
+      const transport = new SSEServerTransport(messagesPath, res);
+      const sessionId = transport.sessionId;
+      this.legacySdkSseSessions.set(sessionId, { server: sessionMcp, transport });
+
+      let closing = false;
+      transport.onclose = async () => {
+        if (closing) {
+          return;
+        }
+        closing = true;
+        this.legacySdkSseSessions.delete(sessionId);
+        try {
+          await sessionMcp.close();
+        } catch {
+          // ignore
+        }
+      };
+
+      transport.onerror = (err) => {
+        this.logger.error('Legacy SDK SSE transport error', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      };
+
+      await sessionMcp.connect(transport as Parameters<McpServer['connect']>[0]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error('Failed to start legacy SDK SSE session', { error: message });
+      if (!res.headersSent) {
+        res.status(500).end('Failed to establish SSE connection');
+      }
+    }
+  }
+
   private attachLegacySdkSseRoutes(app: Express): void {
     if (this._legacySseRoutesAttached) {
       return;
@@ -208,49 +262,8 @@ export class NitroStackServer {
     const LEGACY_SSE_PATH = '/sse';
     const LEGACY_MESSAGES_PATH = '/mcp/messages';
 
-    app.get(LEGACY_SSE_PATH, async (req, res) => {
-      try {
-        const sessionMcp = new McpServer(
-          {
-            name: this.config.name,
-            version: this.config.version,
-          },
-          NitroStackServer.mcpServerOptions,
-        );
-        this.setupHandlersOn(sessionMcp);
-
-        const transport = new SSEServerTransport(LEGACY_MESSAGES_PATH, res);
-        const sessionId = transport.sessionId;
-        this.legacySdkSseSessions.set(sessionId, { server: sessionMcp, transport });
-
-        let closing = false;
-        transport.onclose = async () => {
-          if (closing) {
-            return;
-          }
-          closing = true;
-          this.legacySdkSseSessions.delete(sessionId);
-          try {
-            await sessionMcp.close();
-          } catch {
-            // ignore
-          }
-        };
-
-        transport.onerror = (err) => {
-          this.logger.error('Legacy SDK SSE transport error', {
-            error: err instanceof Error ? err.message : String(err),
-          });
-        };
-
-        await sessionMcp.connect(transport as Parameters<McpServer['connect']>[0]);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.error('Failed to start legacy SDK SSE session', { error: message });
-        if (!res.headersSent) {
-          res.status(500).end('Failed to establish SSE connection');
-        }
-      }
+    app.get(LEGACY_SSE_PATH, async (_req, res) => {
+      await this.startLegacySdkSseSession(res, LEGACY_MESSAGES_PATH);
     });
 
     app.post(LEGACY_MESSAGES_PATH, async (req, res) => {
@@ -284,6 +297,12 @@ export class NitroStackServer {
   private attachLegacySdkSseIfNeeded(transport: HttpTransport): void {
     if (typeof transport.getApp === 'function') {
       this.attachLegacySdkSseRoutes(transport.getApp());
+    }
+    // Cursor opens GET /mcp without mcp-session-id; fall back to legacy SSE on that path.
+    if (typeof transport.setLegacySseHandler === 'function') {
+      transport.setLegacySseHandler(async (_req, res) => {
+        await this.startLegacySdkSseSession(res, '/mcp/messages');
+      });
     }
   }
 
@@ -908,7 +927,7 @@ export class NitroStackServer {
             };
         }
 
-        const contentsMeta = buildResourceReadContentsMeta(resource.getWidgetReadMeta());
+        const contentsMeta = buildResourceReadContentsMeta(resource.getWidgetReadMeta?.());
         if (contentsMeta) {
           responseContent._meta = contentsMeta;
         }
@@ -1055,21 +1074,26 @@ export class NitroStackServer {
       }
     }
 
-    // If HTTP transport is needed (dual mode), set it up BEFORE calling module.start()
-    // This allows modules like OAuthModule to register endpoints on the HTTP server
-    if (transportType === 'dual') {
+    // If HTTP transport is needed (dual or http mode), set it up BEFORE calling module.start()
+    // This allows modules like OAuthModule to register endpoints/middleware on the HTTP server
+    if (transportType === 'dual' || transportType === 'http') {
       const port = parseInt(process.env.PORT || '3000');
       const host = process.env.HOST || 'localhost';
 
-      // Create and start HTTP transport first
+      // Create HTTP transport first (do not start listening yet)
       const { StreamableHttpTransport } = await import('./transports/streamable-http.js');
       const httpTransport = new StreamableHttpTransport({
         port: port,
         host: host,
         endpoint: '/mcp',
-        enableSessions: false, // Disable sessions for dual mode
+        enableSessions: transportType === 'http', // Sessions ONLY in pure http mode
         enableCors: process.env.ENABLE_CORS !== 'false',
+        ...getStreamableHttpEnvOptions(),
       });
+
+      // Delegate /mcp protocol handling to the official SDK transport: each
+      // session gets its own configured MCP server built via this factory.
+      httpTransport.setMcpServerFactory(() => this.createConfiguredMcpServer());
 
       // Set up tools callback and server config for documentation page
       httpTransport.setToolsCallback(async () => {
@@ -1084,16 +1108,12 @@ export class NitroStackServer {
         description: this.config.description,
       });
 
-      this.attachLegacySdkSseIfNeeded(httpTransport as HttpTransport);
-
-      await httpTransport.start();
-
       // Store HTTP transport reference BEFORE modules start
-      // This allows OAuthModule to register discovery endpoints
+      // This allows OAuthModule to register discovery endpoints and middleware
       this._httpTransport = httpTransport as HttpTransport;
     }
 
-    // Call start for all modules (e.g., OAuthModule to register discovery endpoints)
+    // Call start for all modules (e.g., OAuthModule to register discovery endpoints and middleware)
     // Now _httpTransport is available for OAuthModule to use
     for (const moduleClass of this.modules) {
       const moduleInstance = DIContainer.getInstance().resolve<ModuleInstance>(moduleClass);
@@ -1102,7 +1122,13 @@ export class NitroStackServer {
       }
     }
 
-    // Now complete the transport setup using the determined transportType
+    // Start HTTP listener and attach legacy SSE routes ONLY AFTER dynamic modules have finished starting
+    if ((transportType === 'dual' || transportType === 'http') && this._httpTransport) {
+      this.attachLegacySdkSseIfNeeded(this._httpTransport);
+      await this._httpTransport.start();
+    }
+
+    // Now complete the transport setup (connect MCP server) using the determined transportType
     const port = parseInt(process.env.PORT || '3000');
     const host = process.env.HOST || 'localhost';
 
@@ -1138,58 +1164,28 @@ export class NitroStackServer {
         // STDIO: For direct MCP connections (dev tools, Claude Desktop)
         // HTTP SSE: For web-based clients and multiple concurrent connections
 
-        // 1. Start HTTP SSE transport (reuse if already created by start())
+        // 1. Ensure the HTTP host is running (normally created by start()).
+        // The host owns /mcp and delegates protocol handling to the official SDK
+        // Streamable HTTP transport via the MCP server factory (one server per
+        // session), so no manual message forwarding is required here.
         let httpTransport = this._httpTransport;
         if (!httpTransport) {
           const { StreamableHttpTransport } = await import('./transports/streamable-http.js');
-          httpTransport = new StreamableHttpTransport({
+          const transport = new StreamableHttpTransport({
             port: transportOptions?.port || 3000,
             host: transportOptions?.host || 'localhost',
             endpoint: transportOptions?.endpoint || '/mcp',
-            enableSessions: false, // Disable sessions for simpler backward compat
             enableCors: transportOptions?.enableCors !== false, // Enable CORS by default for web clients
-          }) as HttpTransport;
-          this.attachLegacySdkSseIfNeeded(httpTransport);
-          await httpTransport.start();
+            ...getStreamableHttpEnvOptions(),
+          });
+          transport.setMcpServerFactory(() => this.createConfiguredMcpServer());
+          this.attachLegacySdkSseIfNeeded(transport as HttpTransport);
+          await transport.start();
+          httpTransport = transport as HttpTransport;
           this._httpTransport = httpTransport;
         }
 
-        // Wire up HTTP transport to handle MCP messages
-        // Since we can't connect to two transports, manually forward HTTP messages
-        const transport = httpTransport;
-        transport.onmessage = async (message: JsonRpcRequest) => {
-          // Handle the message through the MCP server's internal handler
-          try {
-            // Access internal handlers - this is necessary for dual mode
-            const mcpServerInternal = this.mcpServer as unknown as { _requestHandlers?: Map<string, (req: JsonRpcRequest) => Promise<unknown>> };
-            const handlers = mcpServerInternal._requestHandlers;
-            if (handlers && message && message.method && message.id !== undefined) {
-              const handler = handlers.get(message.method);
-              if (handler) {
-                const result = await handler(message);
-                // Send response back through HTTP transport
-                await transport.send({
-                  jsonrpc: '2.0',
-                  id: message.id,
-                  result,
-                });
-              }
-            }
-          } catch (error: unknown) {
-            const err = error as Error;
-            // Send error response
-            await transport.send({
-              jsonrpc: '2.0',
-              id: message.id ?? null,
-              error: {
-                code: -32603,
-                message: err.message || 'Internal error',
-              },
-            });
-          }
-        };
-
-        // 2. Connect MCP server via STDIO for direct connections
+        // 2. Connect the primary MCP server via STDIO for direct connections.
         const stdioTransport = new StdioServerTransport();
         await this.mcpServer.connect(stdioTransport);
 
@@ -1209,9 +1205,12 @@ export class NitroStackServer {
             port: transportOptions?.port || 3000,
             host: transportOptions?.host || 'localhost',
             endpoint: transportOptions?.endpoint || '/mcp',
-            enableSessions: true,
             enableCors: transportOptions?.enableCors || false,
+            ...getStreamableHttpEnvOptions(),
           });
+
+          // Delegate /mcp protocol handling to the official SDK transport.
+          transport.setMcpServerFactory(() => this.createConfiguredMcpServer());
 
           // Set up tools callback and server config for documentation page
           transport.setToolsCallback(async () => {
@@ -1228,14 +1227,14 @@ export class NitroStackServer {
 
           this.attachLegacySdkSseIfNeeded(transport as HttpTransport);
 
-          // Start HTTP server first
+          // Start HTTP server
           await transport.start();
           httpTransport = transport as HttpTransport;
           this._httpTransport = httpTransport;
         }
 
-        // Then connect MCP server
-        await this.mcpServer.connect(httpTransport as unknown as StdioServerTransport);
+        // The HTTP host owns /mcp and manages its own per-session MCP servers via
+        // the factory; no direct mcpServer.connect() is needed here.
 
         this.logger.info(`${this.config.name} started successfully (HTTP SSE transport)`);
         this.logger.info(`✨ Mode: ${getAppMode().toUpperCase()} (via NITROSTACK_APP_MODE)`);

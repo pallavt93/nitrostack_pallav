@@ -19,9 +19,9 @@ NitroStack uses **`StreamableHttpTransport`**, which mounts MCP on a single conf
 Typical usage:
 
 - **`POST /mcp`** — send JSON-RPC requests to the server (tools, resources, prompts, etc.).
-- **`GET /mcp`** — open an **SSE** stream for server-initiated events and session continuity, as defined by the streamable HTTP transport.
+- **`GET /mcp`** — open an **SSE** stream for server-initiated events (Streamable HTTP clients with an existing session), **or** start a **legacy SDK SSE** session when no `mcp-session-id` is present (Cursor and similar clients).
 
-The implementation may also expose **compatibility aliases** on the same app (for example **`/mcp/sse`** and **`/mcp/message`**) so older URLs still work. Prefer **`/mcp`** for new integrations.
+Use **`/mcp`** for new Streamable HTTP integrations. Older **`/mcp/sse`** and **`/mcp/message`** aliases on this transport were removed when NitroStack delegated protocol handling to the official SDK transport; use root **`/sse`** for legacy SSE clients instead (see below).
 
 **Communication model (conceptual):**
 
@@ -53,9 +53,12 @@ In **`dual`** mode, **STDIO** remains available on the same process: one client 
 
 | Client / scenario | Suggested entry |
 |-------------------|-----------------|
-| MCP Inspector, streamable HTTP, “`/mcp`” URL | `http://<host>:<port>/mcp` |
+| **Cursor IDE** | `http://<host>:<port>/mcp` or `http://<host>:<port>/sse` (both use legacy SSE under the hood) |
+| MCP Inspector, streamable HTTP | `http://<host>:<port>/mcp` |
 | Older examples using **`SSEServerTransport`** | `http://<host>:<port>/sse` (plus **`/mcp/messages`** for posts) |
 | Local NitroStudio / CLI-spawned STDIO | STDIO (no `/mcp` URL) |
+
+Run **`nitrostack cursor`** to write `.cursor/mcp.json`. **Legacy SSE (`/sse`)** is the default; **`/mcp`** also works for Cursor because the server falls back to legacy SSE on `GET /mcp` without a session id.
 
 ## Configuration reminders
 
