@@ -23,7 +23,7 @@ export interface AgentDescriptor {
   /** Returns true when the agent appears to be installed on this machine */
   detect(): Promise<boolean>;
   /** Returns the absolute path of the directory where skills should be installed */
-  getSkillsDir(): string;
+  getSkillsDir(scope?: 'project' | 'global', projectDir?: string): string;
 }
 
 /**

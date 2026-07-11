@@ -56,8 +56,9 @@ export const AGENTS: AgentDescriptor[] = [
     async detect() {
       return dirExists(path.join(HOME, '.cursor'));
     },
-    getSkillsDir() {
-      return path.join(HOME, '.cursor', 'skills');
+    getSkillsDir(scope: 'project' | 'global' = 'global', projectDir: string = process.cwd()) {
+      const base = scope === 'project' ? projectDir : HOME;
+      return path.join(base, '.cursor', 'skills');
     },
   },
   {
@@ -67,8 +68,9 @@ export const AGENTS: AgentDescriptor[] = [
     async detect() {
       return commandExists('codex') || dirExists(path.join(HOME, '.codex'));
     },
-    getSkillsDir() {
-      return path.join(HOME, '.codex', 'skills');
+    getSkillsDir(scope: 'project' | 'global' = 'global', projectDir: string = process.cwd()) {
+      const base = scope === 'project' ? projectDir : HOME;
+      return path.join(base, '.codex', 'skills');
     },
   },
   {
@@ -78,8 +80,9 @@ export const AGENTS: AgentDescriptor[] = [
     async detect() {
       return commandExists('claude') || dirExists(path.join(HOME, '.claude'));
     },
-    getSkillsDir() {
-      return path.join(HOME, '.claude', 'skills');
+    getSkillsDir(scope: 'project' | 'global' = 'global', projectDir: string = process.cwd()) {
+      const base = scope === 'project' ? projectDir : HOME;
+      return path.join(base, '.claude', 'skills');
     },
   },
   {
@@ -89,8 +92,9 @@ export const AGENTS: AgentDescriptor[] = [
     async detect() {
       return commandExists('gemini') || dirExists(path.join(HOME, '.gemini'));
     },
-    getSkillsDir() {
-      return path.join(HOME, '.gemini', 'skills');
+    getSkillsDir(scope: 'project' | 'global' = 'global', projectDir: string = process.cwd()) {
+      const base = scope === 'project' ? projectDir : HOME;
+      return path.join(base, '.gemini', 'skills');
     },
   },
   {
@@ -100,8 +104,9 @@ export const AGENTS: AgentDescriptor[] = [
     async detect() {
       return commandExists('antigravity') || dirExists(path.join(HOME, '.antigravity'));
     },
-    getSkillsDir() {
-      return path.join(HOME, '.antigravity', 'skills');
+    getSkillsDir(scope: 'project' | 'global' = 'global', projectDir: string = process.cwd()) {
+      const base = scope === 'project' ? projectDir : HOME;
+      return path.join(base, '.antigravity', 'skills');
     },
   },
 

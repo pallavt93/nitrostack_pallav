@@ -19,11 +19,13 @@ export async function installSkillsForAgent(
   agent: AgentDescriptor,
   skills: Skill[],
   force: boolean,
+  scope: 'project' | 'global',
+  projectDir: string = process.cwd(),
 ): Promise<InstallResult> {
   const result: InstallResult = { agent, installed: [], skipped: [] };
 
   try {
-    const skillsDir = agent.getSkillsDir();
+    const skillsDir = agent.getSkillsDir(scope, projectDir);
     await fs.mkdirp(skillsDir);
 
     for (const skill of skills) {
@@ -53,11 +55,13 @@ export async function installSkills(
   agents: AgentDescriptor[],
   skills: Skill[],
   force: boolean,
+  scope: 'project' | 'global',
+  projectDir: string = process.cwd(),
 ): Promise<InstallResult[]> {
   const results: InstallResult[] = [];
 
   for (const agent of agents) {
-    const result = await installSkillsForAgent(agent, skills, force);
+    const result = await installSkillsForAgent(agent, skills, force, scope, projectDir);
     results.push(result);
   }
 
