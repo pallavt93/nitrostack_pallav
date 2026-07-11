@@ -18,6 +18,7 @@ import {
   showFooter
 } from '../ui/branding.js';
 import { trackEvent, shutdownAnalytics } from '../analytics/posthog.js';
+import { runSkillsFlow } from '../skills/index.js';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -56,6 +57,7 @@ interface InitOptions {
   description?: string;
   author?: string;
   skipInstall?: boolean;
+  force?: boolean;
 }
 
 export async function initCommand(projectName: string | undefined, options: InitOptions) {
@@ -271,6 +273,20 @@ export async function initCommand(projectName: string | undefined, options: Init
       console.log(chalk.dim('  OAuth Setup: See OAUTH_SETUP.md for provider guides\n'));
     } else if (finalTemplate === 'typescript-pizzaz') {
       console.log(chalk.dim('  Mapbox (optional): Get free key from mapbox.com\n'));
+    }
+
+    // Agent skills
+    const { addAgentSkills } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'addAgentSkills',
+        message: chalk.white('Add agent skills?'),
+        default: false,
+      },
+    ]);
+
+    if (addAgentSkills) {
+      await runSkillsFlow(options.force ?? false);
     }
 
     console.log(chalk.dim('  Happy coding! 🎉\n'));

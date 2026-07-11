@@ -29,6 +29,7 @@ export function createProgram() {
     .option('--description <description>', 'Description of the project')
     .option('--author <author>', 'Author of the project')
     .option('--skip-install', 'Skip installing dependencies')
+    .option('--force', 'Overwrite existing skill files when adding agent skills')
     .action(initCommand);
 
   program
