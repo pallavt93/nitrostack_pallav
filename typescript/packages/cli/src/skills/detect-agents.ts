@@ -1,17 +1,20 @@
 import os from 'os';
 import path from 'path';
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import fs from 'fs-extra';
 import type { AgentDescriptor } from './types.js';
+
+const execAsync = promisify(exec);
 
 /**
  * Returns true when the given CLI command is available in the system PATH.
  * Works cross-platform: uses `where` on Windows, `which` elsewhere.
  */
-function commandExists(cmd: string): boolean {
+async function commandExists(cmd: string): Promise<boolean> {
   try {
     const whichCmd = process.platform === 'win32' ? `where ${cmd}` : `which ${cmd}`;
-    execSync(whichCmd, { stdio: 'pipe' });
+    await execAsync(whichCmd);
     return true;
   } catch {
     return false;
@@ -31,111 +34,123 @@ function dirExists(dirPath: string): boolean {
 
 const HOME = os.homedir();
 
+interface AgentSpec {
+  id: string;
+  name: string;
+  folderName: string;
+  cmd?: string;
+  customDetect?: () => Promise<boolean>;
+  getSkillsDir?: (scope?: 'project' | 'global', projectDir?: string) => string;
+}
+
 /**
- * Registry of all supported AI coding agents.
- *
- * To add a new agent, append a plain object that satisfies AgentDescriptor:
- *
- * ```ts
- * {
- *   id: 'my-agent',
- *   name: 'My Agent',
- *   displayPath: '~/.my-agent/skills',
- *   async detect() { return commandExists('my-agent'); },
- *   getSkillsDir() { return path.join(HOME, '.my-agent', 'skills'); },
- * }
- * ```
- *
- * No other file needs to change.
+ * Helper to build an AgentDescriptor from a simpler specification,
+ * reducing duplicate boilerplate for detect() and getSkillsDir().
  */
+function createAgentDescriptor(spec: AgentSpec): AgentDescriptor {
+  return {
+    id: spec.id,
+    name: spec.name,
+    displayPath: `~/${spec.folderName}/skills`,
+    async detect() {
+      if (spec.customDetect) {
+        return spec.customDetect();
+      }
+      const hasCmd = spec.cmd ? await commandExists(spec.cmd) : false;
+      return hasCmd || dirExists(path.join(HOME, spec.folderName));
+    },
+    getSkillsDir(scope: 'project' | 'global' = 'global', projectDir: string = process.cwd()) {
+      if (spec.getSkillsDir) {
+        return spec.getSkillsDir(scope, projectDir);
+      }
+      const base = scope === 'project' ? projectDir : HOME;
+      return path.join(base, spec.folderName, 'skills');
+    },
+  };
+}
+
 export const AGENTS: AgentDescriptor[] = [
-  {
+  // ── Original 5 agents (must keep indices 0-4 for tests) ───────────────────
+  createAgentDescriptor({
     id: 'cursor',
     name: 'Cursor',
-    displayPath: '.cursor/skills',
-    async detect() {
-      return dirExists(path.join(HOME, '.cursor'));
-    },
-    getSkillsDir(scope: 'project' | 'global' = 'global', projectDir: string = process.cwd()) {
-      const base = scope === 'project' ? projectDir : HOME;
-      return path.join(base, '.cursor', 'skills');
-    },
-  },
-  {
+    folderName: '.cursor',
+  }),
+  createAgentDescriptor({
     id: 'codex',
     name: 'Codex',
-    displayPath: '~/.codex/skills',
-    async detect() {
-      return commandExists('codex') || dirExists(path.join(HOME, '.codex'));
-    },
-    getSkillsDir(scope: 'project' | 'global' = 'global', projectDir: string = process.cwd()) {
-      const base = scope === 'project' ? projectDir : HOME;
-      return path.join(base, '.codex', 'skills');
-    },
-  },
-  {
+    folderName: '.codex',
+    cmd: 'codex',
+  }),
+  createAgentDescriptor({
     id: 'claude-code',
     name: 'Claude Code',
-    displayPath: '~/.claude/skills',
-    async detect() {
-      return commandExists('claude') || dirExists(path.join(HOME, '.claude'));
-    },
-    getSkillsDir(scope: 'project' | 'global' = 'global', projectDir: string = process.cwd()) {
-      const base = scope === 'project' ? projectDir : HOME;
-      return path.join(base, '.claude', 'skills');
-    },
-  },
-  {
+    folderName: '.claude',
+    cmd: 'claude',
+  }),
+  createAgentDescriptor({
     id: 'gemini-cli',
     name: 'Gemini CLI',
-    displayPath: '~/.gemini/skills',
-    async detect() {
-      return commandExists('gemini') || dirExists(path.join(HOME, '.gemini'));
-    },
-    getSkillsDir(scope: 'project' | 'global' = 'global', projectDir: string = process.cwd()) {
-      const base = scope === 'project' ? projectDir : HOME;
-      return path.join(base, '.gemini', 'skills');
-    },
-  },
-  {
+    folderName: '.gemini',
+    cmd: 'gemini',
+  }),
+  createAgentDescriptor({
     id: 'antigravity',
     name: 'Antigravity',
-    displayPath: '~/.antigravity/skills',
-    async detect() {
-      return commandExists('antigravity') || dirExists(path.join(HOME, '.antigravity'));
-    },
-    getSkillsDir(scope: 'project' | 'global' = 'global', projectDir: string = process.cwd()) {
-      const base = scope === 'project' ? projectDir : HOME;
-      return path.join(base, '.antigravity', 'skills');
-    },
-  },
+    folderName: '.antigravity',
+    cmd: 'antigravity',
+  }),
 
-  // ── Future agents ─────────────────────────────────────────────────────────
-  // Uncomment and adjust as support is added:
-  //
-  // { id: 'vscode', name: 'VS Code Agent Mode', displayPath: '~/.vscode/skills',
-  //   async detect() { return commandExists('code') || dirExists(path.join(HOME, '.vscode')); },
-  //   getSkillsDir() { return path.join(HOME, '.vscode', 'skills'); } },
-  //
-  // { id: 'continue', name: 'Continue.dev', displayPath: '~/.continue/skills',
-  //   async detect() { return dirExists(path.join(HOME, '.continue')); },
-  //   getSkillsDir() { return path.join(HOME, '.continue', 'skills'); } },
-  //
-  // { id: 'windsurf', name: 'Windsurf', displayPath: '~/.windsurf/skills',
-  //   async detect() { return commandExists('windsurf') || dirExists(path.join(HOME, '.windsurf')); },
-  //   getSkillsDir() { return path.join(HOME, '.windsurf', 'skills'); } },
-  //
-  // { id: 'cline', name: 'Cline', displayPath: '~/.cline/skills',
-  //   async detect() { return dirExists(path.join(HOME, '.cline')); },
-  //   getSkillsDir() { return path.join(HOME, '.cline', 'skills'); } },
-  //
-  // { id: 'roo-code', name: 'Roo Code', displayPath: '~/.roo/skills',
-  //   async detect() { return dirExists(path.join(HOME, '.roo')); },
-  //   getSkillsDir() { return path.join(HOME, '.roo', 'skills'); } },
-  //
-  // { id: 'openhands', name: 'OpenHands', displayPath: '~/.openhands/skills',
-  //   async detect() { return commandExists('openhands') || dirExists(path.join(HOME, '.openhands')); },
-  //   getSkillsDir() { return path.join(HOME, '.openhands', 'skills'); } },
+  // ── Additional coding agents ──────────────────────────────────────────────
+  createAgentDescriptor({
+    id: 'windsurf',
+    name: 'Windsurf',
+    folderName: '.windsurf',
+    cmd: 'windsurf',
+  }),
+  createAgentDescriptor({
+    id: 'continue',
+    name: 'Continue.dev',
+    folderName: '.continue',
+  }),
+  createAgentDescriptor({
+    id: 'vscode',
+    name: 'VS Code Agent Mode',
+    folderName: '.vscode',
+    // Detect only by command presence — ~/.vscode exists on nearly every dev
+    // machine regardless of whether Agent Mode is in use, causing false positives.
+    customDetect: async () => commandExists('code'),
+  }),
+  createAgentDescriptor({
+    id: 'zed',
+    name: 'Zed',
+    folderName: '.zed',
+    cmd: 'zed',
+  }),
+  createAgentDescriptor({
+    id: 'github-copilot',
+    name: 'GitHub Copilot',
+    // Copilot stores its config at ~/.config/github-copilot, not ~/.copilot
+    folderName: '.config/github-copilot',
+  }),
+  createAgentDescriptor({
+    id: 'goose',
+    name: 'Goose',
+    folderName: '.goose',
+    cmd: 'goose',
+  }),
+  createAgentDescriptor({
+    id: 'aider',
+    name: 'Aider',
+    folderName: '.aider',
+    cmd: 'aider',
+  }),
+  createAgentDescriptor({
+    id: 'openhands',
+    name: 'OpenHands',
+    folderName: '.openhands',
+    cmd: 'openhands',
+  }),
 ];
 
 /**

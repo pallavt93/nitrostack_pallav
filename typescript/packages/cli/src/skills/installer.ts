@@ -19,7 +19,7 @@ export async function installSkillsForAgent(
   agent: AgentDescriptor,
   skills: Skill[],
   force: boolean,
-  scope: 'project' | 'global',
+  scope: 'project' | 'global' = 'global',
   projectDir: string = process.cwd(),
 ): Promise<InstallResult> {
   const result: InstallResult = { agent, installed: [], skipped: [] };
@@ -55,7 +55,7 @@ export async function installSkills(
   agents: AgentDescriptor[],
   skills: Skill[],
   force: boolean,
-  scope: 'project' | 'global',
+  scope: 'project' | 'global' = 'global',
   projectDir: string = process.cwd(),
 ): Promise<InstallResult[]> {
   const results: InstallResult[] = [];
