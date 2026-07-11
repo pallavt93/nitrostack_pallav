@@ -61,7 +61,8 @@ export function Body(...pipes: PipeConstructor[]): ParameterDecorator {
   return (target: object, propertyKey: string | symbol | undefined, parameterIndex: number) => {
     if (!propertyKey) return;
     
-    const existingParams = Reflect.getMetadata(PARAM_PIPES_KEY, target, propertyKey) || {};
+    // Clone to avoid mutating a parent class's param-pipe object when subclassing.
+    const existingParams = { ...(Reflect.getMetadata(PARAM_PIPES_KEY, target, propertyKey) || {}) };
     existingParams[parameterIndex] = {
       type: 'body',
       pipes,

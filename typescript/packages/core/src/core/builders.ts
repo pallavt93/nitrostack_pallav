@@ -9,6 +9,7 @@ import {
   extractPrompts,
   getWidgetMetadata,
   getInitialToolMetadata,
+  getControllerPrefix,
   ToolOptions,
   ResourceOptions,
   PromptOptions,
@@ -97,6 +98,7 @@ export function buildTool(
 export function buildTools(controllerInstance: ControllerInstance): Tool[] {
   const constructor = Object.getPrototypeOf(controllerInstance).constructor as ControllerClass;
   const toolMetadata = extractTools(constructor);
+  const prefix = getControllerPrefix(constructor);
 
   return toolMetadata.map(({ methodName, options }) => {
     const prototype = Object.getPrototypeOf(controllerInstance) as object;
@@ -106,7 +108,15 @@ export function buildTools(controllerInstance: ControllerInstance): Tool[] {
     // Check for initial tool decorator
     const isInitial = getInitialToolMetadata(prototype, methodName);
 
-    return buildTool(controllerInstance, methodName, options, widgetMeta, isInitial);
+    // Apply the controller prefix without mutating the shared options object
+    // stored in class metadata. Skip when the name is already prefixed.
+    const name =
+      prefix && !options.name.startsWith(`${prefix}_`)
+        ? `${prefix}_${options.name}`
+        : options.name;
+    const toolOptions = name === options.name ? options : { ...options, name };
+
+    return buildTool(controllerInstance, methodName, toolOptions, widgetMeta, isInitial);
   });
 }
 

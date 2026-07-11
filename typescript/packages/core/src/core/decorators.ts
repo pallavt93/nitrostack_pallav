@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { z } from 'zod';
 import type { JsonValue, ClassConstructor, ResourceAnnotations, ToolAnnotations } from './types.js';
 import type { TaskSupportLevel } from './task.js';
+import { DIContainer } from './di/container.js';
 
 /**
  * Metadata keys for decorators
@@ -11,6 +12,7 @@ export const WIDGET_METADATA = Symbol('widget:metadata');
 export const RESOURCE_METADATA = Symbol('resource:metadata');
 export const PROMPT_METADATA = Symbol('prompt:metadata');
 export const GUARDS_METADATA = Symbol('guards:metadata');
+export const CONTROLLER_METADATA = Symbol('controller:metadata');
 
 /**
  * Example data for tools/resources
@@ -135,8 +137,10 @@ interface ToolMetadataEntry {
  */
 export function Tool(options: ToolOptions): MethodDecorator {
   return function (target: MethodDecoratorTarget, propertyKey: string | symbol, descriptor: PropertyDescriptor): PropertyDescriptor {
-    // Get existing tools or create new array
-    const existingTools: ToolMetadataEntry[] = Reflect.getMetadata(TOOL_METADATA, target.constructor) || [];
+    // Get existing tools or create new array. Clone to avoid mutating a parent
+    // class's metadata array when subclassing (Reflect.getMetadata walks the
+    // prototype chain, so a shared reference would pollute the parent).
+    const existingTools: ToolMetadataEntry[] = [...(Reflect.getMetadata(TOOL_METADATA, target.constructor) || [])];
 
     // Add this tool
     existingTools.push({
@@ -215,6 +219,64 @@ export function Widget(routePath: string | WidgetRouteMetadata): MethodDecorator
 }
 
 /**
+ * Controller decorator options
+ */
+export interface ControllerOptions {
+  /**
+   * Optional prefix applied to every @Tool name defined in this controller.
+   * For example, `@Controller('github')` turns a tool named `create_issue`
+   * into `github_create_issue`.
+   */
+  prefix?: string;
+}
+
+/**
+ * Controller metadata stored on the class
+ */
+interface ControllerMetadata {
+  prefix?: string;
+}
+
+/**
+ * Controller decorator - Marks a class as a controller, auto-registers it in
+ * the DI container, and optionally prefixes all of its @Tool names.
+ *
+ * @example
+ * ```typescript
+ * @Controller('github')
+ * export class GitHubController {
+ *   @Tool({ name: 'create_issue', ... })
+ *   async createIssue() { } // exposed as `github_create_issue`
+ * }
+ * ```
+ */
+export function Controller(prefixOrOptions?: string | ControllerOptions): ClassDecorator {
+  const options: ControllerMetadata =
+    typeof prefixOrOptions === 'string'
+      ? { prefix: prefixOrOptions }
+      : { prefix: prefixOrOptions?.prefix };
+
+  return (target: object) => {
+    Reflect.defineMetadata(CONTROLLER_METADATA, options, target);
+
+    // Auto-register in the DI container so the tool-bound instance is the same
+    // singleton that receives lifecycle hooks (mirrors @Injectable behavior).
+    const container = DIContainer.getInstance();
+    if (!container.has(target as ClassConstructor)) {
+      container.register(target as ClassConstructor);
+    }
+  };
+}
+
+/**
+ * Get the tool-name prefix declared via @Controller, if any
+ */
+export function getControllerPrefix(target: ClassConstructor): string | undefined {
+  const metadata: ControllerMetadata | undefined = Reflect.getMetadata(CONTROLLER_METADATA, target);
+  return metadata?.prefix;
+}
+
+/**
  * Resource metadata stored on class
  */
 interface ResourceMetadataEntry {
@@ -239,7 +301,7 @@ interface ResourceMetadataEntry {
  */
 export function Resource(options: ResourceOptions): MethodDecorator {
   return function (target: MethodDecoratorTarget, propertyKey: string | symbol, descriptor: PropertyDescriptor): PropertyDescriptor {
-    const existingResources: ResourceMetadataEntry[] = Reflect.getMetadata(RESOURCE_METADATA, target.constructor) || [];
+    const existingResources: ResourceMetadataEntry[] = [...(Reflect.getMetadata(RESOURCE_METADATA, target.constructor) || [])];
 
     existingResources.push({
       methodName: String(propertyKey),
@@ -276,7 +338,7 @@ interface PromptMetadataEntry {
  */
 export function Prompt(options: PromptOptions): MethodDecorator {
   return function (target: MethodDecoratorTarget, propertyKey: string | symbol, descriptor: PropertyDescriptor): PropertyDescriptor {
-    const existingPrompts: PromptMetadataEntry[] = Reflect.getMetadata(PROMPT_METADATA, target.constructor) || [];
+    const existingPrompts: PromptMetadataEntry[] = [...(Reflect.getMetadata(PROMPT_METADATA, target.constructor) || [])];
 
     existingPrompts.push({
       methodName: String(propertyKey),

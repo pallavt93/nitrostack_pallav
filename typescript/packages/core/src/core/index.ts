@@ -82,6 +82,8 @@ export {
   Widget,
   Resource as ResourceDecorator,
   Prompt as PromptDecorator,
+  Controller as ControllerDecorator,
+  getControllerPrefix,
   extractTools,
   extractResources,
   extractPrompts,
@@ -95,6 +97,7 @@ export type {
   ToolInvocationMessages,
   ResourceOptions,
   PromptOptions,
+  ControllerOptions,
   WidgetCspOptions,
   WidgetRouteMetadata,
 } from './decorators.js';

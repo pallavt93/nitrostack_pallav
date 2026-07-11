@@ -39,7 +39,8 @@ interface EventHandlerMetadata {
 export function OnEvent(event: string): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     const targetWithConstructor = target as { constructor: object };
-    const existingHandlers = Reflect.getMetadata(EVENT_HANDLER_KEY, targetWithConstructor.constructor) || [];
+    // Clone to avoid mutating a parent class's handler array when subclassing.
+    const existingHandlers = [...(Reflect.getMetadata(EVENT_HANDLER_KEY, targetWithConstructor.constructor) || [])];
     existingHandlers.push({
       event,
       methodName: propertyKey,
