@@ -34,7 +34,7 @@ import { ToolExecutionError, ValidationError, ResourceNotFoundError, PromptNotFo
 import { v4 as uuidv4 } from 'uuid';
 import { isModule, getModuleMetadata } from './module.js';
 import { buildController } from './builders.js';
-import { DIContainer } from './di/container.js';
+import { DIContainer, type InjectionToken } from './di/container.js';
 import {
   TaskManager,
   TaskContext,
@@ -44,6 +44,7 @@ import {
   TaskAlreadyTerminalError,
   TaskAugmentationRequiredError,
 } from './task.js';
+import { triggerLifecycleHook } from './lifecycle.js';
 
 /**
  * Controller instance type
@@ -53,10 +54,10 @@ interface ControllerInstance {
 }
 
 /**
- * Module instance with lifecycle hooks
+ * Module instance with NitroStack start/stop hooks
+ * (NestJS-style init/destroy/shutdown hooks are discovered via DI getInstances())
  */
 interface ModuleInstance {
-  onModuleInit?(): Promise<void> | void;
   start?(): Promise<void> | void;
   stop?(): Promise<void> | void;
 }
@@ -128,6 +129,12 @@ export class NitroStackServer {
 
   /** Task manager for MCP Tasks support */
   private taskManager: TaskManager;
+
+  /** Registered OS signal handlers for graceful shutdown (see enableShutdownHooks) */
+  private _shutdownSignalHandlers: Array<{ signal: NodeJS.Signals; handler: () => void }> = [];
+
+  /** Guards stop() so double signals / repeated calls don't re-run teardown */
+  private _stopping?: Promise<void>;
 
   constructor(config?: McpServerConfig) {
     // Default config if not provided (e.g., when instantiated by DI container)
@@ -540,11 +547,33 @@ export class NitroStackServer {
 
     this.logger.info(`Registering module: ${metadata.name}`);
 
+    // Register providers in DI so declared-but-uninjected providers are still
+    // instantiated during start() (via instantiateAll) and run lifecycle hooks,
+    // matching the McpApplicationFactory path.
+    const providers = metadata.providers || [];
+    for (const provider of providers) {
+      if (typeof provider === 'function') {
+        DIContainer.getInstance().register(provider as ClassConstructor);
+      } else if (provider && typeof provider === 'object' && 'provide' in provider) {
+        const token = provider.provide as InjectionToken;
+        if (provider.useValue !== undefined) {
+          DIContainer.getInstance().registerValue(token, provider.useValue);
+        } else if (provider.useClass) {
+          DIContainer.getInstance().register(token, provider.useClass);
+        }
+      }
+    }
+
     // Process all controllers in the module
     const controllers = metadata.controllers || [];
 
     for (const controller of controllers) {
       this.logger.info(`  Processing controller: ${(controller as ClassConstructor).name}`);
+
+      // Register the controller in DI so it is instantiated during start()
+      // (via instantiateAll) and participates in lifecycle hooks, matching the
+      // McpApplicationFactory path.
+      DIContainer.getInstance().register(controller as ClassConstructor);
 
       // Build all tools, resources, and prompts from controller
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1066,13 +1095,18 @@ export class NitroStackServer {
     this._transportType = transportType;
     this.logger.debug(`NitroStackServer.start(): NODE_ENV=${process.env.NODE_ENV}, MCP_TRANSPORT_TYPE=${explicitTransport}, transportType=${transportType}`);
 
-    // Call onModuleInit for all modules
+    // Resolve all modules so they (and their dependencies) are initialized in the DI container
     for (const moduleClass of this.modules) {
-      const moduleInstance = DIContainer.getInstance().resolve<ModuleInstance>(moduleClass);
-      if (moduleInstance.onModuleInit) {
-        await moduleInstance.onModuleInit();
-      }
+      DIContainer.getInstance().resolve<ModuleInstance>(moduleClass);
     }
+
+    // Eagerly instantiate all registered providers/controllers so their lifecycle
+    // hooks fire even when they aren't injected anywhere (NestJS-style singletons).
+    DIContainer.getInstance().instantiateAll(this.logger);
+
+    // Call onModuleInit for currently resolved instances (NestJS: after DI resolution)
+    const initializedInstances = new Set(DIContainer.getInstance().getInstances());
+    await triggerLifecycleHook([...initializedInstances], 'onModuleInit');
 
     // If HTTP transport is needed (dual or http mode), set it up BEFORE calling module.start()
     // This allows modules like OAuthModule to register endpoints/middleware on the HTTP server
@@ -1121,6 +1155,16 @@ export class NitroStackServer {
         await moduleInstance.start();
       }
     }
+
+    // Init any instances registered during module.start() that missed the first pass
+    const allInstances = DIContainer.getInstance().getInstances();
+    const lateInstances = allInstances.filter((instance) => !initializedInstances.has(instance));
+    if (lateInstances.length > 0) {
+      await triggerLifecycleHook(lateInstances, 'onModuleInit');
+    }
+
+    // NestJS: onApplicationBootstrap runs after init, before the app accepts connections
+    await triggerLifecycleHook(DIContainer.getInstance().getInstances(), 'onApplicationBootstrap');
 
     // Start HTTP listener and attach legacy SSE routes ONLY AFTER dynamic modules have finished starting
     if ((transportType === 'dual' || transportType === 'http') && this._httpTransport) {
@@ -1397,15 +1441,81 @@ export class NitroStackServer {
   }
 
   /**
-   * Stop the server
+   * Register OS signal handlers so the server shuts down gracefully, running the
+   * NestJS-style shutdown lifecycle hooks (beforeApplicationShutdown /
+   * onApplicationShutdown) with the received signal.
+   *
+   * Opt-in (like NestJS `enableShutdownHooks`) to avoid attaching process
+   * listeners for consumers that manage their own shutdown. Safe to call more
+   * than once; handlers are only attached once per signal.
+   *
+   * @param signals - Signals to listen for (default: SIGTERM, SIGINT)
    */
-  async stop(): Promise<void> {
+  enableShutdownHooks(signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT']): this {
+    for (const signal of signals) {
+      if (this._shutdownSignalHandlers.some((h) => h.signal === signal)) {
+        continue;
+      }
+      const handler = () => {
+        // stop() is idempotent, so repeated signals are safe.
+        this.stop(signal).catch((error) => {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          this.logger.error(`Error during ${signal} shutdown`, { error: errorMessage });
+        });
+      };
+      process.on(signal, handler);
+      this._shutdownSignalHandlers.push({ signal, handler });
+    }
+    return this;
+  }
+
+  /**
+   * Remove any process signal handlers registered via enableShutdownHooks().
+   */
+  private removeShutdownHooks(): void {
+    for (const { signal, handler } of this._shutdownSignalHandlers) {
+      process.removeListener(signal, handler);
+    }
+    this._shutdownSignalHandlers = [];
+  }
+
+  /**
+   * Stop the server
+   *
+   * Idempotent: concurrent or repeated calls (e.g. from multiple OS signals)
+   * share the same in-flight teardown instead of re-running lifecycle hooks or
+   * double-closing transports.
+   */
+  async stop(signal?: string): Promise<void> {
+    if (!this._stopping) {
+      this._stopping = this.doStop(signal);
+    }
+    return this._stopping;
+  }
+
+  private async doStop(signal?: string): Promise<void> {
+    // Detach signal handlers first so nothing re-enters teardown mid-shutdown.
+    this.removeShutdownHooks();
+
+    const instances = DIContainer.getInstance().getInstances();
     try {
-      // Call stop for all modules
+      // Call onModuleDestroy for all resolved instances
+      await triggerLifecycleHook(instances, 'onModuleDestroy', { safe: true, logger: this.logger });
+
+      // Call beforeApplicationShutdown for all resolved instances
+      await triggerLifecycleHook(instances, 'beforeApplicationShutdown', { safe: true, logger: this.logger }, signal);
+
+      // Call stop for all modules. A single failing module must not prevent the
+      // remaining modules (or transport teardown) from stopping.
       for (const moduleClass of this.modules) {
         const moduleInstance = DIContainer.getInstance().resolve<ModuleInstance>(moduleClass);
         if (moduleInstance.stop) {
-          await moduleInstance.stop();
+          try {
+            await moduleInstance.stop();
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this.logger.error(`Error stopping module ${moduleClass.name}`, { error: errorMessage });
+          }
         }
       }
 
@@ -1440,6 +1550,9 @@ export class NitroStackServer {
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.logger.error('Error stopping server', { error: errorMessage });
       throw error;
+    } finally {
+      // NestJS: always run after connection close attempts, even if close threw
+      await triggerLifecycleHook(instances, 'onApplicationShutdown', { safe: true, logger: this.logger }, signal);
     }
   }
 

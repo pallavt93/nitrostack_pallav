@@ -193,6 +193,18 @@ export type { ConfigModuleOptions } from './config-module.js';
 export { McpApp, McpApplicationFactory, getMcpAppMetadata } from './app-decorator.js';
 export type { McpAppOptions } from './app-decorator.js';
 
+// ========== V3 Lifecycle Hooks ==========
+export { triggerLifecycleHook } from './lifecycle.js';
+export type {
+  OnModuleInit,
+  OnApplicationBootstrap,
+  OnModuleDestroy,
+  BeforeApplicationShutdown,
+  OnApplicationShutdown,
+  LifecycleHookName,
+  LifecycleHookOptions,
+} from './lifecycle.js';
+
 // ========== MCP Apps / OpenAI Apps SDK Constants ==========
 /**
  * MIME type for MCP Apps widgets

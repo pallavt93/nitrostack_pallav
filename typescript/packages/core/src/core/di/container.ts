@@ -124,6 +124,38 @@ export class DIContainer {
   }
 
   /**
+   * Get all currently instantiated objects in the container
+   */
+  getInstances(): unknown[] {
+    return Array.from(this.instances.values());
+  }
+
+  /**
+   * Eagerly instantiate every registered provider.
+   *
+   * The container resolves lazily, so declared-but-uninjected providers (and
+   * controllers) would otherwise never be constructed and would miss lifecycle
+   * hooks. This mirrors NestJS's eager singleton instantiation. A provider that
+   * fails to resolve is logged (if a logger is supplied) and skipped so one bad
+   * token does not abort startup.
+   *
+   * @param logger - Optional logger for resolution failures
+   */
+  instantiateAll(logger?: { error(msg: string, meta?: unknown): void }): void {
+    for (const token of this.providers.keys()) {
+      if (this.instances.has(token)) {
+        continue;
+      }
+      try {
+        this.resolve(token);
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        logger?.error(`Failed to instantiate provider "${String(token)}": ${errMsg}`, { error });
+      }
+    }
+  }
+
+  /**
    * Clear all registrations (useful for testing)
    */
   clear(): void {

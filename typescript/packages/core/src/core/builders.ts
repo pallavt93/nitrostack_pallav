@@ -20,8 +20,6 @@ import { getInterceptorMetadata } from './interceptors/interceptor.decorator.js'
 import { getPipeMetadata } from './pipes/pipe.decorator.js';
 import { getExceptionFilterMetadata } from './filters/exception-filter.decorator.js';
 import { DIContainer } from './di/container.js';
-import { isInjectable } from './di/injectable.decorator.js';
-
 /**
  * Controller instance type
  */
@@ -214,8 +212,12 @@ export function buildController(controller: ControllerClass): {
   const container = DIContainer.getInstance();
 
   // Create controller instance (with DI if available)
+  // Resolve from DI whenever the controller is registered so tools bind to the
+  // same singleton that receives lifecycle hooks (via instantiateAll). Falling
+  // back to `new controller()` only for unregistered controllers avoids the
+  // double-instance divergence for non-@Injectable controllers.
   let instance: ControllerInstance;
-  if (isInjectable(controller) && container.has(controller)) {
+  if (container.has(controller)) {
     instance = container.resolve<ControllerInstance>(controller);
   } else {
     instance = new controller();

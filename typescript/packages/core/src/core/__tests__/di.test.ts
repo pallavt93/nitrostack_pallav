@@ -93,4 +93,49 @@ describe('DIContainer', () => {
         const l1 = container.resolve(Level1);
         expect(l1.l2.l3).toBeInstanceOf(Level3);
     });
+
+    it('should return all instantiated instances via getInstances()', () => {
+        class ServiceA { }
+        class ServiceB { }
+        
+        container.resolve(ServiceA);
+        container.resolve(ServiceB);
+        
+        const instances = container.getInstances();
+        expect(instances.length).toBe(2);
+        expect(instances.some((inst: any) => inst instanceof ServiceA)).toBe(true);
+        expect(instances.some((inst: any) => inst instanceof ServiceB)).toBe(true);
+    });
+
+    it('should eagerly instantiate all registered providers via instantiateAll()', () => {
+        class RegisteredA { }
+        class RegisteredB { }
+
+        container.register(RegisteredA);
+        container.register(RegisteredB);
+
+        // Nothing resolved yet
+        expect(container.getInstances().length).toBe(0);
+
+        container.instantiateAll();
+
+        const instances = container.getInstances();
+        expect(instances.length).toBe(2);
+        expect(instances.some((inst: any) => inst instanceof RegisteredA)).toBe(true);
+        expect(instances.some((inst: any) => inst instanceof RegisteredB)).toBe(true);
+    });
+
+    it('should skip providers that fail to resolve and log via the provided logger', () => {
+        class GoodService { }
+        // A string token with no provider/value registered cannot be resolved
+        container.register('missing-token' as any);
+        container.register(GoodService);
+
+        const logger = { error: jest.fn() };
+        expect(() => container.instantiateAll(logger)).not.toThrow();
+
+        // The good service is still instantiated despite the bad token
+        expect(container.getInstances().some((inst: any) => inst instanceof GoodService)).toBe(true);
+        expect(logger.error).toHaveBeenCalled();
+    });
 });

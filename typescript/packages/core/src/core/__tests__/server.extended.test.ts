@@ -44,7 +44,10 @@ jest.unstable_mockModule('../di/container.js', () => ({
     DIContainer: {
         getInstance: jest.fn().mockReturnValue({
             resolve: jest.fn(),
-            registerValue: jest.fn()
+            register: jest.fn(),
+            registerValue: jest.fn(),
+            getInstances: jest.fn().mockReturnValue([]),
+            instantiateAll: jest.fn()
         })
     }
 }));

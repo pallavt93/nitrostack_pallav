@@ -94,6 +94,13 @@ export interface McpAppOptions {
       basePath?: string;
     };
   };
+
+  /**
+   * Register OS signal handlers (SIGTERM/SIGINT) so the application shuts down
+   * gracefully and runs the shutdown lifecycle hooks. Enabled by default; set to
+   * false if the host process manages its own shutdown.
+   */
+  shutdownHooks?: boolean;
 }
 
 /**
@@ -446,6 +453,12 @@ export class McpApplicationFactory {
     };
     serverInternal._transportType = transportType;
     serverInternal._transportOptions = transportOptions;
+
+    // Register graceful-shutdown signal handlers so shutdown lifecycle hooks run
+    // on SIGTERM/SIGINT. Opt-out via `shutdownHooks: false`.
+    if (options.shutdownHooks !== false) {
+      server.enableShutdownHooks();
+    }
 
     return server;
   }
