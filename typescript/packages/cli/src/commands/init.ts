@@ -280,14 +280,6 @@ export async function initCommand(projectName: string | undefined, options: Init
       await runSkillsFlow(options.force ?? false, targetDir);
     }
 
-    // Dependency installation prompt (horizontal selection)
-    let shouldInstallDeps = !options.skipInstall;
-    if (!options.skipInstall) {
-      shouldInstallDeps = await promptYesNoHorizontal('Install dependencies?', true);
-      if (!shouldInstallDeps) {
-        options.skipInstall = true;
-      }
-    }
 
     // Install dependencies
     if (!options.skipInstall) {
