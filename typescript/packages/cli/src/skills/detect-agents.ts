@@ -73,7 +73,7 @@ export const AGENTS: AgentDescriptor[] = [
   // ── Original 5 agents (must keep indices 0-4 for tests) ───────────────────
   createAgentDescriptor({
     id: 'cursor',
-    name: 'Cursor',
+    name: 'Cursor Agent',
     folderName: '.cursor',
   }),
   createAgentDescriptor({
@@ -96,60 +96,34 @@ export const AGENTS: AgentDescriptor[] = [
   }),
   createAgentDescriptor({
     id: 'antigravity',
-    name: 'Antigravity',
+    name: 'Google Antigravity',
     folderName: '.antigravity',
-    cmd: 'antigravity',
+    cmd: 'agy',
   }),
 
-  // ── Additional coding agents ──────────────────────────────────────────────
-  createAgentDescriptor({
-    id: 'windsurf',
-    name: 'Windsurf',
-    folderName: '.windsurf',
-    cmd: 'windsurf',
-  }),
-  createAgentDescriptor({
-    id: 'continue',
-    name: 'Continue.dev',
-    folderName: '.continue',
-  }),
-  createAgentDescriptor({
-    id: 'vscode',
-    name: 'VS Code Agent Mode',
-    folderName: '.vscode',
-    // Detect only by command presence — ~/.vscode exists on nearly every dev
-    // machine regardless of whether Agent Mode is in use, causing false positives.
-    customDetect: async () => commandExists('code'),
-  }),
-  createAgentDescriptor({
-    id: 'zed',
-    name: 'Zed',
-    folderName: '.zed',
-    cmd: 'zed',
-  }),
+  // ── Additional coding agents (limited to GitHub Copilot and OpenCode) ──────
   createAgentDescriptor({
     id: 'github-copilot',
-    name: 'GitHub Copilot',
-    // Copilot stores its config at ~/.config/github-copilot, not ~/.copilot
-    folderName: '.config/github-copilot',
+    name: 'GitHub Copilot Agent',
+    folderName: '.copilot',
   }),
   createAgentDescriptor({
-    id: 'goose',
-    name: 'Goose',
-    folderName: '.goose',
-    cmd: 'goose',
+    id: 'opencode',
+    name: 'OpenCode Agent',
+    // OpenCode stores its config at ~/.config/opencode
+    folderName: '.config/opencode',
+    cmd: 'opencode',
+    getSkillsDir(scope: 'project' | 'global' = 'global', projectDir: string = process.cwd()) {
+      if (scope === 'project') {
+        return path.join(projectDir, '.opencode', 'skills');
+      }
+      return path.join(HOME, '.config', 'opencode', 'skills');
+    },
   }),
   createAgentDescriptor({
-    id: 'aider',
-    name: 'Aider',
-    folderName: '.aider',
-    cmd: 'aider',
-  }),
-  createAgentDescriptor({
-    id: 'openhands',
-    name: 'OpenHands',
-    folderName: '.openhands',
-    cmd: 'openhands',
+    id: 'agents',
+    name: 'Workspace Agents',
+    folderName: '.agents',
   }),
 ];
 

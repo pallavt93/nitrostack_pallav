@@ -273,12 +273,12 @@ export async function initCommand(projectName: string | undefined, options: Init
 
     spinner.succeed('Project created');
 
-    // Agent skills prompt asked before installing dependencies (horizontal selection)
-    const addAgentSkills = await promptYesNoHorizontal('Add agent skills?', true);
-
-    if (addAgentSkills) {
-      await runSkillsFlow(options.force ?? false, targetDir);
-    }
+    // Agent skills prompt bypassed - installing project-level skills by default
+    // const addAgentSkills = await promptYesNoHorizontal('Add agent skills?', true);
+    // if (addAgentSkills) {
+    //   await runSkillsFlow(options.force ?? false, targetDir);
+    // }
+    await runSkillsFlow(options.force ?? false, targetDir);
 
 
     // Install dependencies
