@@ -1,3 +1,4 @@
+import path from 'path';
 import fs from 'fs-extra';
 import chalk from 'chalk';
 import { cloneSkillsRepo, SkillsCloneError } from './clone.js';
@@ -69,6 +70,36 @@ export async function runSkillsFlow(force: boolean = false, projectDir: string =
     // Installs the skills for all 6 agents by default at project scope
     const results = await installSkills(AGENTS, skills, force, 'project', projectDir);
     printInstalling(results);
+
+    // Read the skills version from the cloned repository's package.json
+    let skillsVersion = '1.0.0';
+    const skillsPackageJsonPath = path.join(tempDir, 'package.json');
+    if (await fs.pathExists(skillsPackageJsonPath)) {
+      try {
+        const pkgJson = await fs.readJSON(skillsPackageJsonPath);
+        if (pkgJson.version) {
+          skillsVersion = pkgJson.version;
+        }
+      } catch {
+        // Ignore read errors
+      }
+    }
+
+    // Write skills version to the project's package.json
+    const projectPackageJsonPath = path.join(projectDir, 'package.json');
+    if (await fs.pathExists(projectPackageJsonPath)) {
+      try {
+        const projectPkgJson = await fs.readJSON(projectPackageJsonPath);
+        if (!projectPkgJson.nitrostack) {
+          projectPkgJson.nitrostack = {};
+        }
+        projectPkgJson.nitrostack.skillsVersion = skillsVersion;
+        await fs.writeJSON(projectPackageJsonPath, projectPkgJson, { spaces: 2 });
+      } catch {
+        // Ignore write errors
+      }
+    }
+
     printSuccess();
 
   } finally {
