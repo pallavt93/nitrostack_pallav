@@ -109,7 +109,7 @@ export async function runSkillsFlow(force: boolean = false, projectDir: string =
         choices: detected.map((agent: AgentDescriptor) => ({
           name: `${chalk.white(agent.name)}  ${chalk.dim(agent.displayPath)}`,
           value: agent.id,
-          checked: true,
+          checked: false,
         })),
         pageSize: 10,
       },
