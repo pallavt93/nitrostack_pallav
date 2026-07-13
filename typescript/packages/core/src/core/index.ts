@@ -90,6 +90,7 @@ export {
   getWidgetMetadata,
   getGuardsMetadata,
   InitialTool,
+  getInitialToolMetadata,
 } from './decorators.js';
 
 export type {
