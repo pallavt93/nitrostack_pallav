@@ -1260,13 +1260,8 @@ export class StreamableHttpTransport {
       display: flex;
       align-items: center;
       justify-content: center;
-      cursor: pointer;
       color: #b4b4b4;
       transition: border-color 0.2s;
-    }
-
-    .chatgpt-icon-box:hover {
-      border-color: #b4b4b4;
     }
 
     .chatgpt-icon-desc {
@@ -1310,7 +1305,7 @@ export class StreamableHttpTransport {
       color: #676767;
     }
 
-    .chatgpt-input:focus, .chatgpt-input.active-input {
+    .chatgpt-input.active-input {
       border-color: #10a37f;
     }
 
@@ -1361,7 +1356,6 @@ export class StreamableHttpTransport {
       font-weight: 500;
       border-radius: 9999px;
       border: none;
-      cursor: pointer;
       color: #ececec;
       background-color: transparent;
       display: flex;
@@ -1384,7 +1378,6 @@ export class StreamableHttpTransport {
       font-size: 14.5px;
       appearance: none;
       outline: none;
-      cursor: pointer;
       background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b4b4b4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
       background-repeat: no-repeat;
       background-position: right 14px center;
@@ -1429,7 +1422,6 @@ export class StreamableHttpTransport {
       width: 16px;
       height: 16px;
       accent-color: #10a37f;
-      cursor: pointer;
       margin-top: 3px;
     }
 
@@ -1443,7 +1435,6 @@ export class StreamableHttpTransport {
       font-size: 13.5px;
       font-weight: 600;
       color: #ececec;
-      cursor: pointer;
     }
 
     .chatgpt-checkbox-desc {
@@ -1480,12 +1471,7 @@ export class StreamableHttpTransport {
       font-weight: 600;
       border-radius: 9999px;
       border: none;
-      cursor: pointer;
       transition: background-color 0.2s;
-    }
-
-    .chatgpt-btn-create:hover {
-      background-color: #ececec;
     }
 
     /* Claude Custom Connector Mockup Styles */
@@ -1589,7 +1575,7 @@ export class StreamableHttpTransport {
       color: #706e67;
     }
 
-    .claude-input:focus-within, .claude-input.active-input {
+    .claude-input.active-input {
       border-color: #3890ff;
       box-shadow: 0 0 0 1px #3890ff;
     }
@@ -1626,7 +1612,6 @@ export class StreamableHttpTransport {
       font-size: 13.5px;
       font-weight: 500;
       color: #e3e2e0;
-      cursor: pointer;
       margin-bottom: 24px;
       user-select: none;
     }
@@ -1681,11 +1666,9 @@ export class StreamableHttpTransport {
     .claude-btn-add {
       background-color: #e3e2e0;
       color: #161513;
+      cursor: default;
     }
 
-    .claude-btn-add:hover {
-      background-color: #ffffff;
-    }
   </style>
 </head>
 <body>
