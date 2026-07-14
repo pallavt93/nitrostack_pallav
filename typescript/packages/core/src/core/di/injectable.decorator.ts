@@ -74,7 +74,8 @@ export function Injectable(options?: InjectableOptions): ClassDecorator {
  */
 export function Inject(token: InjectionToken): ParameterDecorator {
   return (target: object, propertyKey: string | symbol | undefined, parameterIndex: number) => {
-    const existingTokens: InjectionToken[] = Reflect.getMetadata(INJECT_KEY, target) || [];
+    // Clone to avoid mutating a parent class's inject-token array when subclassing.
+    const existingTokens: InjectionToken[] = [...(Reflect.getMetadata(INJECT_KEY, target) || [])];
     existingTokens[parameterIndex] = token;
     Reflect.defineMetadata(INJECT_KEY, existingTokens, target);
   };

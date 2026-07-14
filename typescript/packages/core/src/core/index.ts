@@ -82,12 +82,15 @@ export {
   Widget,
   Resource as ResourceDecorator,
   Prompt as PromptDecorator,
+  Controller as ControllerDecorator,
+  getControllerPrefix,
   extractTools,
   extractResources,
   extractPrompts,
   getWidgetMetadata,
   getGuardsMetadata,
   InitialTool,
+  getInitialToolMetadata,
 } from './decorators.js';
 
 export type {
@@ -95,6 +98,7 @@ export type {
   ToolInvocationMessages,
   ResourceOptions,
   PromptOptions,
+  ControllerOptions,
   WidgetCspOptions,
   WidgetRouteMetadata,
 } from './decorators.js';
@@ -192,6 +196,18 @@ export type { ConfigModuleOptions } from './config-module.js';
 // ========== V3 Application Bootstrap ==========
 export { McpApp, McpApplicationFactory, getMcpAppMetadata } from './app-decorator.js';
 export type { McpAppOptions } from './app-decorator.js';
+
+// ========== V3 Lifecycle Hooks ==========
+export { triggerLifecycleHook } from './lifecycle.js';
+export type {
+  OnModuleInit,
+  OnApplicationBootstrap,
+  OnModuleDestroy,
+  BeforeApplicationShutdown,
+  OnApplicationShutdown,
+  LifecycleHookName,
+  LifecycleHookOptions,
+} from './lifecycle.js';
 
 // ========== MCP Apps / OpenAI Apps SDK Constants ==========
 /**

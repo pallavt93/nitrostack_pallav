@@ -9,6 +9,7 @@ import {
   extractPrompts,
   getWidgetMetadata,
   getInitialToolMetadata,
+  getControllerPrefix,
   ToolOptions,
   ResourceOptions,
   PromptOptions,
@@ -20,8 +21,6 @@ import { getInterceptorMetadata } from './interceptors/interceptor.decorator.js'
 import { getPipeMetadata } from './pipes/pipe.decorator.js';
 import { getExceptionFilterMetadata } from './filters/exception-filter.decorator.js';
 import { DIContainer } from './di/container.js';
-import { isInjectable } from './di/injectable.decorator.js';
-
 /**
  * Controller instance type
  */
@@ -99,6 +98,7 @@ export function buildTool(
 export function buildTools(controllerInstance: ControllerInstance): Tool[] {
   const constructor = Object.getPrototypeOf(controllerInstance).constructor as ControllerClass;
   const toolMetadata = extractTools(constructor);
+  const prefix = getControllerPrefix(constructor);
 
   return toolMetadata.map(({ methodName, options }) => {
     const prototype = Object.getPrototypeOf(controllerInstance) as object;
@@ -108,7 +108,15 @@ export function buildTools(controllerInstance: ControllerInstance): Tool[] {
     // Check for initial tool decorator
     const isInitial = getInitialToolMetadata(prototype, methodName);
 
-    return buildTool(controllerInstance, methodName, options, widgetMeta, isInitial);
+    // Apply the controller prefix without mutating the shared options object
+    // stored in class metadata. Skip when the name is already prefixed.
+    const name =
+      prefix && !options.name.startsWith(`${prefix}_`)
+        ? `${prefix}_${options.name}`
+        : options.name;
+    const toolOptions = name === options.name ? options : { ...options, name };
+
+    return buildTool(controllerInstance, methodName, toolOptions, widgetMeta, isInitial);
   });
 }
 
@@ -214,8 +222,12 @@ export function buildController(controller: ControllerClass): {
   const container = DIContainer.getInstance();
 
   // Create controller instance (with DI if available)
+  // Resolve from DI whenever the controller is registered so tools bind to the
+  // same singleton that receives lifecycle hooks (via instantiateAll). Falling
+  // back to `new controller()` only for unregistered controllers avoids the
+  // double-instance divergence for non-@Injectable controllers.
   let instance: ControllerInstance;
-  if (isInjectable(controller) && container.has(controller)) {
+  if (container.has(controller)) {
     instance = container.resolve<ControllerInstance>(controller);
   } else {
     instance = new controller();

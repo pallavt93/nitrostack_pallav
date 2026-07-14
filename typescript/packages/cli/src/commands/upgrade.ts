@@ -18,11 +18,19 @@ import {
 } from '../ui/branding.js';
 import { trackEvent, shutdownAnalytics } from '../analytics/posthog.js';
 
+import { cloneSkillsRepo } from '../skills/clone.js';
+import { discoverSkills } from '../skills/discover.js';
+import { installSkills } from '../skills/installer.js';
+import { AGENTS } from '../skills/detect-agents.js';
+
 interface PackageJson {
   name?: string;
   version?: string;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  nitrostack?: {
+    skillsVersion?: string;
+  };
 }
 
 interface UpgradeOptions {
@@ -295,6 +303,67 @@ export async function upgradeCommand(options: UpgradeOptions): Promise<void> {
     } catch (error) {
       widgetsSpinner.fail('Failed to upgrade widgets');
       console.error(error);
+    }
+  }
+
+  // Upgrade skills
+  const rootPackageJson: PackageJson = fs.readJSONSync(rootPackageJsonPath);
+  const localSkillsVersion = rootPackageJson.nitrostack?.skillsVersion || '0.0.0';
+  let tempSkillsDir: string | null = null;
+  const skillsSpinner = new NitroSpinner('Checking agent skills...').start();
+  try {
+    tempSkillsDir = await cloneSkillsRepo();
+    const skillsPkgJsonPath = path.join(tempSkillsDir, 'package.json');
+    let remoteSkillsVersion = '1.0.0';
+    if (fs.existsSync(skillsPkgJsonPath)) {
+      const skillsPkgJson = fs.readJSONSync(skillsPkgJsonPath);
+      remoteSkillsVersion = skillsPkgJson.version || '1.0.0';
+    }
+
+    if (compareVersions(localSkillsVersion, remoteSkillsVersion) < 0) {
+      if (dryRun) {
+        allResults.push({
+          location: 'skills',
+          packageName: '@nitrostack/skills',
+          previousVersion: localSkillsVersion,
+          newVersion: remoteSkillsVersion,
+          upgraded: false,
+        });
+        skillsSpinner.info(`Skills: Updates available (${localSkillsVersion} → ${remoteSkillsVersion})`);
+      } else {
+        const skills = await discoverSkills(tempSkillsDir);
+        await installSkills(AGENTS, skills, true, 'project', projectRoot);
+        
+        // Write new version to package.json
+        const updatedPackageJson: PackageJson = fs.readJSONSync(rootPackageJsonPath);
+        if (!updatedPackageJson.nitrostack) {
+          updatedPackageJson.nitrostack = {};
+        }
+        updatedPackageJson.nitrostack.skillsVersion = remoteSkillsVersion;
+        fs.writeJSONSync(rootPackageJsonPath, updatedPackageJson, { spaces: 2 });
+        
+        allResults.push({
+          location: 'skills',
+          packageName: '@nitrostack/skills',
+          previousVersion: localSkillsVersion,
+          newVersion: remoteSkillsVersion,
+          upgraded: true,
+        });
+        skillsSpinner.succeed(`Skills: Upgraded from ${localSkillsVersion} to ${remoteSkillsVersion}`);
+      }
+    } else {
+      skillsSpinner.info('Skills: All agent skills are up to date');
+    }
+  } catch (error) {
+    skillsSpinner.fail('Failed to upgrade agent skills');
+    console.error(error);
+  } finally {
+    if (tempSkillsDir) {
+      try {
+        fs.removeSync(tempSkillsDir);
+      } catch {
+        // best effort
+      }
     }
   }
 

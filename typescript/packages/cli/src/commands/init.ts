@@ -18,6 +18,93 @@ import {
   showFooter
 } from '../ui/branding.js';
 import { trackEvent, shutdownAnalytics } from '../analytics/posthog.js';
+import { runSkillsFlow } from '../skills/index.js';
+import readline from 'readline';
+
+/**
+ * Prompts the user with a horizontal YES/NO choice using left/right arrow keys.
+ */
+async function promptYesNoHorizontal(message: string, defaultValue: boolean = false): Promise<boolean> {
+  return new Promise((resolve) => {
+    let value = defaultValue;
+    const stdin = process.stdin;
+    const stdout = process.stdout;
+
+    // Save TTY and raw mode state
+    const isRaw = stdin.isRaw;
+    if (stdin.isTTY) {
+      stdin.setRawMode(true);
+    }
+    readline.emitKeypressEvents(stdin);
+    stdin.resume();
+
+    // Hide cursor
+    stdout.write('\u001B[?25l');
+
+    const render = () => {
+      readline.clearLine(stdout, 0);
+      readline.cursorTo(stdout, 0);
+
+      const qMark = chalk.cyan('?');
+      const msg = chalk.bold(message);
+      const pointer = chalk.dim('›');
+      const separator = chalk.dim(' / ');
+      
+      const noPart = !value 
+        ? chalk.cyan.underline('No') 
+        : chalk.dim('No');
+
+      const yesPart = value 
+        ? chalk.cyan.underline('Yes') 
+        : chalk.dim('Yes');
+
+      stdout.write(`${qMark} ${msg} ${pointer} ${noPart}${separator}${yesPart}`);
+    };
+
+    render();
+
+    const onKeypress = (str: string, key: any) => {
+      if (!key) return;
+
+      if (key.name === 'left' || key.name === 'right') {
+        value = !value;
+        render();
+      } else if (key.name === 'return' || key.name === 'enter') {
+        cleanup();
+        // Clear prompt line and print final answer
+        readline.clearLine(stdout, 0);
+        readline.cursorTo(stdout, 0);
+        const checkMark = chalk.green('✔');
+        const finalAns = value ? chalk.cyan('Yes') : chalk.cyan('No');
+        stdout.write(`${checkMark} ${chalk.white(message)} ${finalAns}\n`);
+        
+        // Resolve after a small delay to prevent keypress bleeding into the next prompt
+        setTimeout(() => {
+          resolve(value);
+        }, 100);
+      } else if (key.ctrl && key.name === 'c') {
+        cleanup();
+        process.exit(130); // SIGINT exit code
+      }
+    };
+
+    const cleanup = () => {
+      // Show cursor
+      stdout.write('\u001B[?25h');
+      stdin.removeListener('keypress', onKeypress);
+      
+      // Consume any data currently sitting in the stream buffer
+      stdin.read();
+
+      if (stdin.isTTY) {
+        stdin.setRawMode(isRaw);
+      }
+      stdin.pause();
+    };
+
+    stdin.on('keypress', onKeypress);
+  });
+}
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -56,6 +143,7 @@ interface InitOptions {
   description?: string;
   author?: string;
   skipInstall?: boolean;
+  force?: boolean;
 }
 
 export async function initCommand(projectName: string | undefined, options: InitOptions) {
@@ -96,14 +184,10 @@ export async function initCommand(projectName: string | undefined, options: Init
 
     // Check if directory exists
     if (fs.existsSync(targetDir)) {
-      const { overwrite } = await inquirer.prompt([
-        {
-          type: 'confirm',
-          name: 'overwrite',
-          message: chalk.yellow(`Directory ${finalProjectName} already exists. Overwrite?`),
-          default: false,
-        },
-      ]);
+      const overwrite = await promptYesNoHorizontal(
+        chalk.yellow(`Directory ${finalProjectName} already exists. Overwrite?`),
+        false
+      );
 
       if (!overwrite) {
         log('Cancelled', 'warning');
@@ -129,7 +213,7 @@ export async function initCommand(projectName: string | undefined, options: Init
             value: 'typescript-pizzaz',
           },
           {
-            name: `${brand.signal('OAuth')}       ${chalk.dim('Flight booking with OAuth 2.1 auth')}`,
+            name: `${brand.signal('Flight booking')}  ${chalk.dim('Flight booking with OAuth 2.1 auth')}`,
             value: 'typescript-oauth',
           },
         ],
@@ -188,6 +272,14 @@ export async function initCommand(projectName: string | undefined, options: Init
     }
 
     spinner.succeed('Project created');
+
+    // Agent skills prompt bypassed - installing project-level skills by default
+    // const addAgentSkills = await promptYesNoHorizontal('Add agent skills?', true);
+    // if (addAgentSkills) {
+    //   await runSkillsFlow(options.force ?? false, targetDir);
+    // }
+    await runSkillsFlow(options.force ?? false, targetDir);
+
 
     // Install dependencies
     if (!options.skipInstall) {
