@@ -7,7 +7,8 @@
   "types": "dist/index.d.ts",
   "bin": {
     "nitrostack-cli": "dist/index.js",
-    "@nitrostack/cli": "dist/index.js"
+    "@nitrostack/cli": "dist/index.js",
+    "nitrostack-pack": "dist/pack/standalone.js"
   },
   "exports": {
     ".": {
@@ -23,7 +24,7 @@
     "assets"
   ],
   "scripts": {
-    "build": "tsc && chmod +x dist/index.js",
+    "build": "tsc && chmod +x dist/index.js dist/pack/standalone.js",
     "dev": "tsc --watch",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
@@ -40,17 +41,20 @@
   "author": "Nitrostack Inc <hello@nitrostack.ai>",
   "license": "Apache-2.0",
   "dependencies": {
+    "archiver": "^7.0.1",
     "chalk": "^5.3.0",
     "chokidar": "^3.6.0",
     "commander": "^12.1.0",
     "esbuild": "^0.24.0",
     "fs-extra": "^11.3.2",
+    "ignore": "^7.0.5",
     "inquirer": "^9.3.7",
     "open": "^10.1.0",
     "ora": "^8.1.1",
     "posthog-node": "^5.21.2"
   },
   "devDependencies": {
+    "@types/archiver": "^6.0.3",
     "@types/fs-extra": "^11.0.4",
     "@types/inquirer": "^9.0.9",
     "@types/jest": "^29.5.14",
