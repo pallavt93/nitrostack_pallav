@@ -10,7 +10,7 @@
  */
 
 export interface IgnoreMatcher {
-  ignores(relativePath: string): boolean;
+  ignores(relativePath: string, isDirectory?: boolean): boolean;
   add(patterns: string | string[]): IgnoreMatcher;
 }
 
@@ -20,6 +20,8 @@ interface CompiledRule {
   directoryOnly: boolean;
   anchored: boolean;
   regex: RegExp;
+  /** Matches only paths under the directory (requires a slash after the dir name). */
+  underRegex: RegExp | null;
 }
 
 function escapeRegex(value: string): string {
@@ -99,12 +101,24 @@ function compilePattern(pattern: string): CompiledRule | null {
     source = `(^|/)${body}(?:/.*)?$`;
   }
 
+  // For directory-only rules, also compile a regex that requires a child path
+  // so a plain file named "dist" is not treated like directory "dist/".
+  let underSource: string;
+  if (isRecursivePrefix || raw.includes('**/')) {
+    underSource = `^${body}/.+$`;
+  } else if (basenameOnly) {
+    underSource = `(^|/)${body}/.+$`;
+  } else {
+    underSource = `^${body}/.+$`;
+  }
+
   return {
     raw: pattern.trim(),
     negated,
     directoryOnly,
     anchored,
     regex: new RegExp(source),
+    underRegex: directoryOnly ? new RegExp(underSource) : null,
   };
 }
 
@@ -130,18 +144,31 @@ export function createIgnoreMatcher(patterns: string[] = []): IgnoreMatcher {
       return matcher;
     },
 
-    ignores(relativePath: string): boolean {
-      const path = normalizeRelativePath(relativePath);
-      if (!path || path === '.') {
+    ignores(relativePath: string, isDirectory: boolean = false): boolean {
+      const normalized = normalizeRelativePath(relativePath);
+      if (!normalized || normalized === '.') {
         return false;
       }
+
+      // Trailing slash is a directory hint (gitignore-style)
+      const asDirectory = isDirectory || relativePath.replace(/\\/g, '/').endsWith('/');
 
       let ignored = false;
 
       for (const rule of rules) {
-        if (rule.regex.test(path)) {
-          ignored = !rule.negated;
+        if (!rule.regex.test(normalized)) {
+          continue;
         }
+
+        if (rule.directoryOnly && !asDirectory) {
+          // Plain file: only ignore if it lives under the directory, not if it
+          // merely shares the directory's name (e.g. file "dist" vs dir "dist/").
+          if (!rule.underRegex || !rule.underRegex.test(normalized)) {
+            continue;
+          }
+        }
+
+        ignored = !rule.negated;
       }
 
       return ignored;

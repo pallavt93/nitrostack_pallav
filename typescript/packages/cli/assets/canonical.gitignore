@@ -39,7 +39,7 @@ pids/
 coverage/
 .nyc_output/
 
-# Uploads (created by convert_temperature tool)
+# Uploads
 uploads/
 
 # TypeScript cache

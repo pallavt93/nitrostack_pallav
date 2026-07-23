@@ -15,9 +15,10 @@ function sanitizeZipName(name: string): string {
  * If --output is provided, only the filename is used (directories / absolute paths are ignored).
  */
 function resolveOutputPath(projectRoot: string, projectName: string, output?: string): string {
-  const fileName = output
-    ? path.basename(output).replace(/\.zip$/i, '') || sanitizeZipName(projectName)
-    : sanitizeZipName(projectName);
+  const rawName = output
+    ? path.basename(output).replace(/\.zip$/i, '') || projectName
+    : projectName;
+  const fileName = sanitizeZipName(rawName);
 
   return path.join(projectRoot, `${fileName}.zip`);
 }

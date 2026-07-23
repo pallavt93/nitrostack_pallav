@@ -157,10 +157,5 @@ export function isPathIgnored(
   if (!relativePath || relativePath === '.') {
     return false;
   }
-
-  if (isDirectory) {
-    return matcher.ignores(`${relativePath}/`) || matcher.ignores(relativePath);
-  }
-
-  return matcher.ignores(relativePath);
+  return matcher.ignores(relativePath, isDirectory);
 }

@@ -54,6 +54,16 @@ describe('createIgnoreMatcher', () => {
     expect(matcher.ignores('src/index.ts')).toBe(false);
   });
 
+  it('does not exclude a plain file that shares a directory-only pattern name', () => {
+    const matcher = createIgnoreMatcher(['dist/']);
+
+    expect(matcher.ignores('dist', false)).toBe(false); // file named "dist"
+    expect(matcher.ignores('dist', true)).toBe(true); // directory named "dist"
+    expect(matcher.ignores('packages/foo/dist', false)).toBe(false);
+    expect(matcher.ignores('packages/foo/dist', true)).toBe(true);
+    expect(matcher.ignores('dist/index.js', false)).toBe(true);
+  });
+
   it('matches **/ recursive directory patterns', () => {
     const matcher = createIgnoreMatcher(['**/build/', '**/dist/']);
 

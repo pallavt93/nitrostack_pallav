@@ -14,6 +14,7 @@ export interface ZipCollectionResult {
 /**
  * Collect relative file paths that should be included, and pruned excluded roots.
  * Excluded directories are recorded once and not descended into.
+ * Symlinks are resolved via stat so symlink-to-directory is walked, not archived as a file.
  */
 export async function collectFilesToPack(
   projectRoot: string,
@@ -30,25 +31,38 @@ export async function collectFilesToPack(
       return;
     }
 
-    // Stable order for deterministic trees
     entries.sort((a, b) => a.name.localeCompare(b.name));
 
     for (const entry of entries) {
       const absolutePath = path.join(currentDir, entry.name);
       const relativePath = path.relative(projectRoot, absolutePath).split(path.sep).join('/');
 
-      if (isPathIgnored(matcher, projectRoot, absolutePath, entry.isDirectory())) {
-        const displayPath = entry.isDirectory() ? `${relativePath}/` : relativePath;
+      let isDirectory = entry.isDirectory();
+      let isFile = entry.isFile();
+
+      if (entry.isSymbolicLink()) {
+        try {
+          const stats = await fs.promises.stat(absolutePath);
+          isDirectory = stats.isDirectory();
+          isFile = stats.isFile();
+        } catch {
+          // Broken symlink — skip
+          continue;
+        }
+      }
+
+      if (isPathIgnored(matcher, projectRoot, absolutePath, isDirectory)) {
+        const displayPath = isDirectory ? `${relativePath}/` : relativePath;
         excludedPaths.push(displayPath);
         continue;
       }
 
-      if (entry.isDirectory()) {
+      if (isDirectory) {
         await walk(absolutePath);
         continue;
       }
 
-      if (entry.isFile() || entry.isSymbolicLink()) {
+      if (isFile) {
         includedPaths.push(relativePath);
       }
     }
