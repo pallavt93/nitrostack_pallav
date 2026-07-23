@@ -11,10 +11,18 @@ export interface ZipCollectionResult {
   excludedPaths: string[];
 }
 
+/** True when realPath is the root or a descendant of rootReal. */
+function isInsideRoot(realPath: string, rootReal: string): boolean {
+  const relative = path.relative(rootReal, realPath);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
 /**
  * Collect relative file paths that should be included, and pruned excluded roots.
  * Excluded directories are recorded once and not descended into.
- * Symlinks are resolved via stat so symlink-to-directory is walked, not archived as a file.
+ * Symlinks are resolved via stat/realpath so:
+ * - symlink-to-directory is walked (not archived as a file)
+ * - cycles and targets outside the project root are skipped
  */
 export async function collectFilesToPack(
   projectRoot: string,
@@ -22,8 +30,31 @@ export async function collectFilesToPack(
 ): Promise<ZipCollectionResult> {
   const includedPaths: string[] = [];
   const excludedPaths: string[] = [];
+  const visitedDirs = new Set<string>();
+
+  let projectRootReal: string;
+  try {
+    projectRootReal = await fs.promises.realpath(projectRoot);
+  } catch {
+    projectRootReal = path.resolve(projectRoot);
+  }
 
   async function walk(currentDir: string): Promise<void> {
+    let currentReal: string;
+    try {
+      currentReal = await fs.promises.realpath(currentDir);
+    } catch {
+      return;
+    }
+
+    if (visitedDirs.has(currentReal)) {
+      return;
+    }
+    if (!isInsideRoot(currentReal, projectRootReal)) {
+      return;
+    }
+    visitedDirs.add(currentReal);
+
     let entries: fs.Dirent[];
     try {
       entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
@@ -42,6 +73,11 @@ export async function collectFilesToPack(
 
       if (entry.isSymbolicLink()) {
         try {
+          const realTarget = await fs.promises.realpath(absolutePath);
+          if (!isInsideRoot(realTarget, projectRootReal)) {
+            // Symlink escapes the project — skip
+            continue;
+          }
           const stats = await fs.promises.stat(absolutePath);
           isDirectory = stats.isDirectory();
           isFile = stats.isFile();

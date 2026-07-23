@@ -109,9 +109,15 @@ export async function syncProjectGitignore(
 
   if (syncGitignore && mergeResult.updated) {
     await fs.writeFile(gitignorePath, mergeResult.mergedContent, 'utf-8');
+    return mergeResult;
   }
 
-  return mergeResult;
+  // Matcher still uses merged rules, but only report an update when we actually wrote.
+  return {
+    mergedContent: mergeResult.mergedContent,
+    addedRules: [],
+    updated: false,
+  };
 }
 
 /**

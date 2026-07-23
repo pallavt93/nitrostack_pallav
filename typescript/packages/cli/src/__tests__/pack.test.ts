@@ -1,7 +1,7 @@
 import path from 'path';
 import os from 'os';
-import { execSync } from 'child_process';
 import fs from 'fs-extra';
+import { describe, it, expect } from '@jest/globals';
 import {
   buildIgnoreMatcher,
   collectFilesToPack,
@@ -34,12 +34,49 @@ async function createProject(structure: Record<string, string | null>): Promise<
   return root;
 }
 
+const ZIP_EOCD_SIGNATURE = 0x06054b50;
+const ZIP_CENTRAL_FILE_HEADER_SIGNATURE = 0x02014b50;
+
+/**
+ * List zip entry names by parsing the central directory (no system unzip binary).
+ */
 function listZipEntries(zipPath: string): string[] {
-  const output = execSync(`unzip -Z1 "${zipPath}"`, { encoding: 'utf-8' });
-  return output
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const buffer = fs.readFileSync(zipPath);
+  const minEocdSize = 22;
+  const maxComment = 0xffff;
+  const searchStart = Math.max(0, buffer.length - (minEocdSize + maxComment));
+
+  let eocdOffset = -1;
+  for (let i = buffer.length - minEocdSize; i >= searchStart; i--) {
+    if (buffer.readUInt32LE(i) === ZIP_EOCD_SIGNATURE) {
+      eocdOffset = i;
+      break;
+    }
+  }
+
+  if (eocdOffset === -1) {
+    throw new Error(`Invalid zip: end of central directory not found (${zipPath})`);
+  }
+
+  const entryCount = buffer.readUInt16LE(eocdOffset + 10);
+  let offset = buffer.readUInt32LE(eocdOffset + 16);
+  const entries: string[] = [];
+
+  for (let i = 0; i < entryCount; i++) {
+    if (offset + 46 > buffer.length || buffer.readUInt32LE(offset) !== ZIP_CENTRAL_FILE_HEADER_SIGNATURE) {
+      throw new Error(`Invalid zip: bad central directory header at offset ${offset}`);
+    }
+
+    const fileNameLength = buffer.readUInt16LE(offset + 28);
+    const extraLength = buffer.readUInt16LE(offset + 30);
+    const commentLength = buffer.readUInt16LE(offset + 32);
+    const nameStart = offset + 46;
+    const nameEnd = nameStart + fileNameLength;
+    entries.push(buffer.toString('utf8', nameStart, nameEnd));
+    offset = nameEnd + extraLength + commentLength;
+  }
+
+  return entries;
 }
 
 describe('createIgnoreMatcher', () => {
@@ -281,6 +318,8 @@ describe('packProject', () => {
 
       expect(result.outputPath).toBeNull();
       expect(result.filesIncluded).toBeGreaterThan(0);
+      expect(result.gitignoreUpdated).toBe(false);
+      expect(result.addedGitignoreRules).toHaveLength(0);
       expect(result.excludedCategories.length).toBeGreaterThan(0);
       expect(result.dryRunTree).toBeDefined();
       expect(result.dryRunTree).toContain('✅');
@@ -430,6 +469,42 @@ describe('collectFilesToPack', () => {
       );
     } finally {
       await fs.remove(projectDir);
+    }
+  });
+
+  it('skips symlink targets outside the project and tolerates circular symlinks', async () => {
+    const projectDir = await createProject({
+      'package.json': JSON.stringify({
+        name: 'symlink-app',
+        dependencies: { '@nitrostack/core': '^1.0.0' },
+      }),
+      'src/keep.ts': 'export {};',
+      'inside/file.txt': 'safe',
+    });
+
+    const outsideDir = await makeTempDir('nitro-pack-outside-');
+    await fs.writeFile(path.join(outsideDir, 'secret.txt'), 'nope');
+
+    try {
+      await fs.symlink(outsideDir, path.join(projectDir, 'escape-link'));
+      await fs.symlink(path.join(projectDir, 'loop-b'), path.join(projectDir, 'loop-a'));
+      await fs.symlink(path.join(projectDir, 'loop-a'), path.join(projectDir, 'loop-b'));
+      await fs.symlink(path.join(projectDir, 'inside'), path.join(projectDir, 'alias-inside'));
+
+      const matcher = buildIgnoreMatcher('');
+      const collection = await collectFilesToPack(projectDir, matcher);
+
+      expect(collection.includedPaths).toContain('src/keep.ts');
+      // Same real directory is walked once (via inside/ or alias-inside/), not duplicated
+      expect(
+        collection.includedPaths.includes('inside/file.txt')
+        || collection.includedPaths.includes('alias-inside/file.txt'),
+      ).toBe(true);
+      expect(collection.includedPaths.some((p) => p.includes('secret.txt'))).toBe(false);
+      expect(collection.includedPaths.some((p) => p.startsWith('escape-link'))).toBe(false);
+    } finally {
+      await fs.remove(projectDir);
+      await fs.remove(outsideDir);
     }
   });
 });
