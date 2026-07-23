@@ -5,6 +5,7 @@ import fs from 'fs-extra';
 import {
   buildIgnoreMatcher,
   collectFilesToPack,
+  createIgnoreMatcher,
   createOptimizedZip,
   formatPackTree,
   mergeGitignoreRules,
@@ -40,6 +41,44 @@ function listZipEntries(zipPath: string): string[] {
     .map((line) => line.trim())
     .filter(Boolean);
 }
+
+describe('createIgnoreMatcher', () => {
+  it('matches basename directory patterns at any depth', () => {
+    const matcher = createIgnoreMatcher(['dist/', 'node_modules/', '.next/', 'out/']);
+
+    expect(matcher.ignores('dist/index.js')).toBe(true);
+    expect(matcher.ignores('packages/foo/dist/index.js')).toBe(true);
+    expect(matcher.ignores('src/widgets/node_modules/react/index.js')).toBe(true);
+    expect(matcher.ignores('src/widgets/.next/server.js')).toBe(true);
+    expect(matcher.ignores('src/widgets/out/page.html')).toBe(true);
+    expect(matcher.ignores('src/index.ts')).toBe(false);
+  });
+
+  it('matches **/ recursive directory patterns', () => {
+    const matcher = createIgnoreMatcher(['**/build/', '**/dist/']);
+
+    expect(matcher.ignores('apps/web/build/x.js')).toBe(true);
+    expect(matcher.ignores('packages/foo/dist/index.js')).toBe(true);
+    expect(matcher.ignores('src/app.ts')).toBe(false);
+  });
+
+  it('matches simple globs and exact env files', () => {
+    const matcher = createIgnoreMatcher(['*.log', '.env', '.env.*.local']);
+
+    expect(matcher.ignores('error.log')).toBe(true);
+    expect(matcher.ignores('logs/error.log')).toBe(true);
+    expect(matcher.ignores('.env')).toBe(true);
+    expect(matcher.ignores('.env.production.local')).toBe(true);
+    expect(matcher.ignores('src/index.ts')).toBe(false);
+  });
+
+  it('supports negation with last-match-wins', () => {
+    const matcher = createIgnoreMatcher(['*.log', '!keep.log']);
+
+    expect(matcher.ignores('error.log')).toBe(true);
+    expect(matcher.ignores('keep.log')).toBe(false);
+  });
+});
 
 describe('validateNitrostackProject', () => {
   it('passes when @nitrostack/core is present', async () => {

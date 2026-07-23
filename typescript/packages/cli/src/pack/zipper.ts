@@ -1,9 +1,9 @@
 import path from 'path';
 import fs from 'fs';
 import { createWriteStream } from 'fs';
-import type { Ignore } from 'ignore';
 import archiver from 'archiver';
 import { isPathIgnored } from './gitignore.js';
+import type { IgnoreMatcher } from './ignore-matcher.js';
 
 export interface ZipCollectionResult {
   filesIncluded: number;
@@ -17,7 +17,7 @@ export interface ZipCollectionResult {
  */
 export async function collectFilesToPack(
   projectRoot: string,
-  matcher: Ignore,
+  matcher: IgnoreMatcher,
 ): Promise<ZipCollectionResult> {
   const includedPaths: string[] = [];
   const excludedPaths: string[] = [];
@@ -71,7 +71,7 @@ export async function collectFilesToPack(
 export async function createOptimizedZip(
   projectRoot: string,
   outputPath: string,
-  matcher: Ignore,
+  matcher: IgnoreMatcher,
 ): Promise<ZipCollectionResult> {
   const collection = await collectFilesToPack(projectRoot, matcher);
   const outputDir = path.dirname(outputPath);

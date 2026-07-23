@@ -1,5 +1,5 @@
-export { packProject } from './pack-project.js';
-export { validateNitrostackProject, PackValidationError } from './validate-project.js';
+export { createIgnoreMatcher } from './ignore-matcher.js';
+export type { IgnoreMatcher } from './ignore-matcher.js';
 export {
   mergeGitignoreRules,
   buildIgnoreMatcher,
@@ -15,6 +15,8 @@ export {
 } from './exclusions.js';
 export { collectFilesToPack, createOptimizedZip } from './zipper.js';
 export { formatPackTree } from './tree.js';
+export { packProject } from './pack-project.js';
+export { validateNitrostackProject, PackValidationError } from './validate-project.js';
 export type {
   PackOptions,
   PackResult,

@@ -1,8 +1,8 @@
 import path from 'path';
 import fs from 'fs-extra';
-import ignore, { type Ignore } from 'ignore';
 import { loadCanonicalGitignore } from './canonical-gitignore.js';
 import { ENV_EXCLUDED_PATTERNS, HARD_EXCLUDED_PATTERNS } from './exclusions.js';
+import { createIgnoreMatcher, type IgnoreMatcher } from './ignore-matcher.js';
 import type { GitignoreMergeResult } from './types.js';
 
 const GIT_DIR_PATTERN = '.git/';
@@ -10,6 +10,8 @@ const GIT_DIR_PATTERN = '.git/';
 export interface BuildIgnoreMatcherOptions {
   includeEnv?: boolean;
 }
+
+export type { IgnoreMatcher };
 
 function normalizeRuleLine(line: string): string | null {
   const trimmed = line.trim();
@@ -29,7 +31,6 @@ function parseRules(content: string): string[] {
 function isEnvRule(rule: string): boolean {
   return ENV_EXCLUDED_PATTERNS.some((pattern) => {
     if (pattern === rule) return true;
-    // Match variants like .env, .env.local, .env.*.local against gitignore lines
     if (pattern === '.env.*.local') {
       return /^\.env\..+\.local$/.test(rule) || rule === '.env.*.local';
     }
@@ -119,7 +120,7 @@ export async function syncProjectGitignore(
 export function buildIgnoreMatcher(
   mergedGitignoreContent: string,
   options: BuildIgnoreMatcherOptions = {},
-): Ignore {
+): IgnoreMatcher {
   const includeEnv = options.includeEnv ?? false;
   let mergedRules = parseRules(mergedGitignoreContent);
 
@@ -143,11 +144,11 @@ export function buildIgnoreMatcher(
     allRules.push(GIT_DIR_PATTERN);
   }
 
-  return ignore().add(allRules);
+  return createIgnoreMatcher(allRules);
 }
 
 export function isPathIgnored(
-  matcher: Ignore,
+  matcher: IgnoreMatcher,
   projectRoot: string,
   absolutePath: string,
   isDirectory: boolean = false,
@@ -157,7 +158,6 @@ export function isPathIgnored(
     return false;
   }
 
-  // The ignore package matches directories more reliably with a trailing slash.
   if (isDirectory) {
     return matcher.ignores(`${relativePath}/`) || matcher.ignores(relativePath);
   }
