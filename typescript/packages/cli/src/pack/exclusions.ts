@@ -33,6 +33,7 @@ export const HARD_EXCLUDED_PATTERNS: string[] = [
   'npm-debug.log*',
   'yarn-debug.log*',
   'yarn-error.log*',
+  '*.zip',
 ];
 
 export const EXCLUSION_CATEGORIES: ExclusionCategory[] = [
@@ -71,6 +72,10 @@ export const EXCLUSION_CATEGORIES: ExclusionCategory[] = [
   {
     category: 'Logs',
     paths: ['*.log', 'npm-debug.log*', 'yarn-debug.log*', 'yarn-error.log*'],
+  },
+  {
+    category: 'Archives',
+    paths: ['*.zip'],
   },
 ];
 

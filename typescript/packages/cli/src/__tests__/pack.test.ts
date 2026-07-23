@@ -348,6 +348,30 @@ describe('packProject', () => {
       await fs.remove(projectDir);
     }
   });
+
+  it('always writes the zip into the project root even when --output has directories', async () => {
+    const projectDir = await createProject({
+      'package.json': JSON.stringify({
+        name: 'root-zip-app',
+        dependencies: { '@nitrostack/core': '^1.0.0' },
+      }),
+      'src/app.ts': 'export {};',
+    });
+
+    try {
+      const result = await packProject({
+        cwd: projectDir,
+        output: '../outside/backup.zip',
+        syncGitignore: false,
+      });
+
+      expect(result.outputPath).toBe(path.join(projectDir, 'backup.zip'));
+      expect(await fs.pathExists(result.outputPath!)).toBe(true);
+      expect(path.dirname(result.outputPath!)).toBe(projectDir);
+    } finally {
+      await fs.remove(projectDir);
+    }
+  });
 });
 
 describe('formatPackTree', () => {

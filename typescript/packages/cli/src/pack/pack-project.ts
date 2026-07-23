@@ -10,11 +10,16 @@ function sanitizeZipName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'nitrostack-project';
 }
 
+/**
+ * Always place the zip in the project root.
+ * If --output is provided, only the filename is used (directories / absolute paths are ignored).
+ */
 function resolveOutputPath(projectRoot: string, projectName: string, output?: string): string {
-  if (output) {
-    return path.isAbsolute(output) ? output : path.resolve(projectRoot, output);
-  }
-  return path.join(projectRoot, `${sanitizeZipName(projectName)}.zip`);
+  const fileName = output
+    ? path.basename(output).replace(/\.zip$/i, '') || sanitizeZipName(projectName)
+    : sanitizeZipName(projectName);
+
+  return path.join(projectRoot, `${fileName}.zip`);
 }
 
 /**

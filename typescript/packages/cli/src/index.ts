@@ -93,7 +93,7 @@ export function createProgram() {
   program
     .command('pack')
     .description('Create an optimized zip of the project (excludes build artifacts)')
-    .option('-o, --output <path>', 'Output zip path')
+    .option('-o, --output <path>', 'Zip filename (always written to the project root)')
     .option('--dry-run', 'Show excluded/included summary without creating zip')
     .option('--include-env', 'Include .env files in the zip')
     .option('--no-sync-gitignore', 'Skip merging canonical rules into local .gitignore')
