@@ -6,7 +6,7 @@ export {
   syncProjectGitignore,
   isPathIgnored,
 } from './gitignore.js';
-export { loadCanonicalGitignore, getCanonicalGitignorePath } from './canonical-gitignore.js';
+export { loadCanonicalGitignore, getCanonicalGitignorePath, writeCanonicalGitignore } from './canonical-gitignore.js';
 export {
   getExclusionReport,
   HARD_EXCLUDED_PATTERNS,

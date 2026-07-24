@@ -21,3 +21,12 @@ export async function loadCanonicalGitignore(): Promise<string> {
   }
   return fs.readFile(canonicalPath, 'utf-8');
 }
+
+/**
+ * Write the bundled canonical .gitignore into a project root as `.gitignore`.
+ * Used by init because npm never ships files named `.gitignore` in the package tarball.
+ */
+export async function writeCanonicalGitignore(projectRoot: string): Promise<void> {
+  const content = await loadCanonicalGitignore();
+  await fs.writeFile(path.join(projectRoot, '.gitignore'), content, 'utf-8');
+}
